@@ -1,0 +1,4 @@
+import * as React from "react";
+declare function Kbd({ className, ...props }: React.ComponentProps<"kbd">): import("react/jsx-runtime").JSX.Element;
+declare function KbdGroup({ className, ...props }: React.ComponentProps<"span">): import("react/jsx-runtime").JSX.Element;
+export { Kbd, KbdGroup };
