@@ -1,0 +1,33 @@
+{
+  "name": "bhules-frontend",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@auth0/auth0-react": "^2.15.1",
+    "@bhubai/bhub-design-system": "file:../design-system",
+    "@tanstack/react-query": "^5.62.0",
+    "chart.js": "^4.5.1",
+    "dompurify": "^3.3.2",
+    "html2pdf.js": "^0.14.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^2.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^4",
+    "vite": "^6.0.3"
+  }
+}

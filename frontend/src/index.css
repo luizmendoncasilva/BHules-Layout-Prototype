@@ -1,0 +1,59 @@
+@import "tailwindcss";
+@import "@bhubai/bhub-design-system/dist/styles.css";
+
+@theme {
+  /* O DS referencia --font-inter/--font-geist-mono (via --font-sans/--font-mono
+     no @theme inline) mas nunca define o valor — no pacote original isso vem
+     do next/font do app Next.js de dev/preview do DS. Aqui fornecemos o stack
+     real da fonte. */
+  --font-inter: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Tokens gerais do DS que existem como custom properties em :root/.dark
+     mas não são expostos no @theme inline do pacote (mesmo padrão que o
+     DS já usa para --color-success-subtle etc., estendido às lacunas). */
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-ghost: var(--ghost);
+  --color-ghost-foreground: var(--ghost-foreground);
+  --color-ghost-hover: var(--ghost-hover);
+  --color-outline: var(--outline);
+  --color-outline-hover: var(--outline-hover);
+  --color-outline-active: var(--outline-active);
+  --color-foreground-alt: var(--foreground-alt);
+  --color-mid-alt: var(--mid-alt);
+  --color-border-0: var(--border-0);
+  --color-border-1: var(--border-1);
+  --color-accent-2: var(--accent-2);
+  --color-accent-3: var(--accent-3);
+  --color-border-3: var(--border-3);
+  --color-border-4: var(--border-4);
+  --color-border-5: var(--border-5);
+  --color-destructive-border: var(--destructive-border);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-destructive-text: var(--destructive-text);
+  --color-backdrop: var(--backdrop);
+  --color-body-background: var(--body-background);
+
+  /* Sombras do DS: o token e o namespace de tema do Tailwind usam o mesmo
+     nome (--shadow-*), então não dá para referenciar via var() sem criar
+     uma referência circular. Os valores abaixo são espelhados literalmente
+     de design-system/src/styles.css (claro); o modo escuro não é usado
+     neste frontend, então só o conjunto claro é necessário aqui. */
+  --shadow-2xs: 0 1px 0 0 #0000000c;
+  --shadow-xs:  0 1px 2px 0 #0000000c;
+  --shadow-sm:  0 1px 3px 0 #00000019, 0 1px 2px -1px #00000019;
+  --shadow-md:  0 4px 6px -1px #00000019, 0 2px 4px -2px #00000019;
+  --shadow-lg:  0 10px 15px -3px #00000019, 0 4px 6px -4px #00000019;
+  --shadow-xl:  0 20px 25px -5px #00000019, 0 8px 10px -6px #00000019;
+  --shadow-2xl: 0 25px 50px -12px #0000003f;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--foreground);
+}
