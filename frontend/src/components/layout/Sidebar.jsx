@@ -12,7 +12,7 @@ import BHubLogo from '../shared/BHubLogo'
 import { api } from '../../api/client'
 import { INTEGRADAS_TABS } from '../../constants/integradasTabs'
 import { SPED_TABS } from '../../constants/spedTabs'
-import { NOTAS_FISCAIS_GROUPS, CTE_TABS, NFC_TABS } from '../../constants/notasFiscaisTabs'
+import { NOTAS_FISCAIS_GROUPS, CTE_GROUPS, NFC_TABS } from '../../constants/notasFiscaisTabs'
 
 export const CRAWLER_TABS = [
   { id: 'NFE', label: 'Leis Federais e Estaduais', icon: ScrollText },
@@ -122,26 +122,76 @@ function ExpandableNavItem({ icon, label, view, tabs, currentView, subView, expa
   )
 }
 
-// Igual ao ExpandableNavItem, mas com mais um nível: cada "grupo" (ex:
-// Materiais NF-e) é seu próprio accordion dentro do accordion do módulo
-// (Notas Fiscais). Usado só onde a segregação exige agrupar sub-telas por
-// tipo de documento antes de separar por direção (saída/entrada).
+// Um nó da árvore abaixo do módulo (ex: "Materiais NF-e" ou "Emitidas"
+// dentro dele): tem `tabs` (é folha — lista de sub-telas navegáveis) OU
+// `groups` (aninha mais um nível — chama a si mesmo recursivamente). Nunca
+// os dois. Cada nó controla seu próprio open/close, então a árvore aceita
+// qualquer profundidade sem precisar de um componente por nível.
+function containsSubView(node, subView) {
+  if (node.tabs) return node.tabs.some((t) => t.id === subView)
+  return (node.groups || []).some((g) => containsSubView(g, subView))
+}
+
+function TreeGroup({ node, isActive, subView, onNavigate, view, depth }) {
+  const active = isActive && containsSubView(node, subView)
+  const [open, setOpen] = useState(active)
+
+  useEffect(() => {
+    if (active) setOpen(true)
+  }, [active])
+
+  const borderCls = depth > 1 ? 'border-sidebar-border/60' : 'border-sidebar-border'
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left w-full text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <node.icon className="w-3.5 h-3.5 shrink-0" />
+        <span className="truncate flex-1">{node.label}</span>
+        <ChevronDown
+          className={`w-3 h-3 shrink-0 text-sidebar-foreground/60 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+        />
+      </button>
+      {open && (
+        <div className={`ml-4 pl-3 border-l ${borderCls} flex flex-col gap-0.5 mt-0.5 mb-1`}>
+          {node.tabs && node.tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => onNavigate?.(view, tab.id)}
+              className={[
+                'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left',
+                isActive && subView === tab.id
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              ].join(' ')}
+            >
+              <tab.icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{tab.label}</span>
+            </button>
+          ))}
+          {node.groups && node.groups.map((g) => (
+            <TreeGroup key={g.id} node={g} isActive={isActive} subView={subView} onNavigate={onNavigate} view={view} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Igual ao ExpandableNavItem, mas o conteúdo é uma árvore (via TreeGroup)
+// em vez de uma lista achatada — usado onde a segregação precisa agrupar
+// sub-telas por tipo de documento (e às vezes por mais um nível ainda,
+// ex: Emitidas/Recebidas) antes de chegar na direção (Entrada/Saída).
 function NestedExpandableNavItem({ icon, label, view, groups, isActive, subView, expanded, onNavigate, setExpanded, badge }) {
   const [open, setOpen] = useState(isActive)
-  const [openGroups, setOpenGroups] = useState(() => new Set(groups.map((g) => g.id)))
 
   useEffect(() => {
     if (isActive) setOpen(true)
   }, [isActive])
 
-  const toggleGroup = (id) => {
-    setOpenGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  const firstLeafId = (node) => (node.tabs ? node.tabs[0].id : firstLeafId(node.groups[0]))
 
   return (
     <div>
@@ -156,7 +206,7 @@ function NestedExpandableNavItem({ icon, label, view, groups, isActive, subView,
           if (!expanded) {
             setExpanded(true)
             setOpen(true)
-            onNavigate?.(view, subView || groups[0].tabs[0].id)
+            onNavigate?.(view, subView || firstLeafId(groups[0]))
             return
           }
           setOpen((v) => !v)
@@ -164,42 +214,9 @@ function NestedExpandableNavItem({ icon, label, view, groups, isActive, subView,
       />
       {expanded && open && (
         <div className="ml-4 pl-3 border-l border-sidebar-border flex flex-col gap-0.5 mt-0.5 mb-1">
-          {groups.map((group) => {
-            const groupOpen = openGroups.has(group.id)
-            return (
-              <div key={group.id}>
-                <button
-                  onClick={() => toggleGroup(group.id)}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left w-full text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                >
-                  <group.icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate flex-1">{group.label}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 shrink-0 text-sidebar-foreground/60 transition-transform duration-150 ${groupOpen ? '' : '-rotate-90'}`}
-                  />
-                </button>
-                {groupOpen && (
-                  <div className="ml-4 pl-3 border-l border-sidebar-border/60 flex flex-col gap-0.5 mt-0.5 mb-1">
-                    {group.tabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => onNavigate?.(view, tab.id)}
-                        className={[
-                          'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left',
-                          isActive && subView === tab.id
-                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                        ].join(' ')}
-                      >
-                        <tab.icon className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{tab.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {groups.map((group) => (
+            <TreeGroup key={group.id} node={group} isActive={isActive} subView={subView} onNavigate={onNavigate} view={view} depth={1} />
+          ))}
         </div>
       )}
     </div>
@@ -267,9 +284,9 @@ export default function Sidebar({ currentView, subViews = {}, onNavigate }) {
           onNavigate={onNavigate} setExpanded={setExpanded} badge={reviewCount}
         />
 
-        <ExpandableNavItem
-          icon={Truck} label="CT-e" view="cte" tabs={CTE_TABS}
-          currentView={currentView} subView={subViews.cte} expanded={expanded}
+        <NestedExpandableNavItem
+          icon={Truck} label="CT-e" view="cte" groups={CTE_GROUPS}
+          isActive={currentView === 'cte'} subView={subViews.cte} expanded={expanded}
           onNavigate={onNavigate} setExpanded={setExpanded}
         />
 
