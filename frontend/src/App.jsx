@@ -45,12 +45,12 @@ export default function App() {
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [previousView, setPreviousView] = useState('list')
   // Sub-tela ativa por módulo — cada módulo com sub-navegação na sidebar
-  // (Notas Fiscais, CTE, NFC, Notas Integradas, Legislação, Dados SPED,
+  // (Notas Fiscais, CT-e, NFC-e, Notas Integradas, Legislação, Dados SPED,
   // BHub Tax) guarda aqui a sua.
   const [subViews, setSubViews] = useState({
-    list: 'materiais_entradas',
-    cte: 'cte_saidas',
-    nfc: 'nfc_saidas',
+    list: 'materiais_recebidas_entradas',
+    cte: 'cte_recebidos_entradas',
+    nfc: 'nfc_emitidas',
     integradas: 'nfse_saida',
     crawler: 'NFE',
     sped: 'fiscal',

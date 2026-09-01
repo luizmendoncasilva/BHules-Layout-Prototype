@@ -81,7 +81,7 @@ export const api = {
     }),
 
   // Invoices
-  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType } = {}) => {
+  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -91,11 +91,14 @@ export const api = {
     if (status) params.set('status_camu', status)
     if (source) params.set('source', source)
     if (codMod) params.set('cod_mod', codMod)
-    // Direção sob a ótica do cliente — '0' = emissão própria (saída), '1' =
-    // terceiro (entrada). Cada sub-tela da segregação de Notas Fiscais/CTE/NFC
-    // manda a sua (ver notasFiscaisTabs.js), substituindo o antigo
-    // `only_incoming=true` fixo (que só cobria NF-e 55 de entrada).
+    // Dois eixos independentes de cada sub-tela da segregação de Notas
+    // Fiscais/CT-e/NFC-e (ver notasFiscaisTabs.js), substituindo o antigo
+    // `only_incoming=true` fixo (que só cobria NF-e 55 de entrada):
+    // ind_emit = quem é o emitente — '0' = o próprio cliente (Emitida/o),
+    // '1' = terceiro (Recebida/o). ind_oper = natureza da operação (CFOP) —
+    // '0' = Entrada, '1' = Saída.
     if (indEmit) params.set('ind_emit', indEmit)
+    if (indOper) params.set('ind_oper', indOper)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
     if (escrituracaoStatus) params.set('escrituracao_status', escrituracaoStatus)
@@ -154,13 +157,14 @@ export const api = {
     return request(`/invoices/batch-analysis/summary?${params}`)
   },
 
-  getStatusCounts: (companyIds, codMod, startDate, endDate, indEmit) => {
+  getStatusCounts: (companyIds, codMod, startDate, endDate, indEmit, indOper) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     if (codMod) params.set('cod_mod', codMod)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
     if (indEmit) params.set('ind_emit', indEmit)
+    if (indOper) params.set('ind_oper', indOper)
     return request(`/invoices/status-counts?${params}`)
   },
 

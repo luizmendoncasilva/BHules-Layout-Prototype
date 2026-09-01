@@ -161,22 +161,34 @@ for (let i = 1; i <= TOTAL_INVOICES; i++) {
   const dtDoc = isoDate(daysAgo)
   const supplier = pick(SUPPLIERS)
   const dest = pick(DEST_COMPANIES)
-  // Maioria NF-e modelo 55 (entrada, ind_emit='1' — visão do cliente, o que
-  // alimenta ListView/BatchAnalysis), mas com uma distribuição DETERMINÍSTICA
-  // (não aleatória) que garante pelo menos algumas notas em cada uma das
-  // abas de "Notas Integradas" e da segregação de "Notas Fiscais"/CTE/NFC
-  // (Serviços Prestados/Tomados, Materiais Saídas/Entradas, CT-e Saídas/
-  // Entradas, NFC-e) — com rand() puro, combinações raras podiam sair zeradas.
-  const bucket = i % 22
-  let codMod, indEmit
-  if (bucket === 17) { codMod = '65'; indEmit = '1' }        // NFC-e (Notas Integradas)
-  else if (bucket === 18) { codMod = '57'; indEmit = '1' }   // CT-e Entrada
-  else if (bucket === 19) { codMod = 'NFSE'; indEmit = '1' } // NFS-e Entrada (Serviços Tomados)
-  else if (bucket === 15) { codMod = 'NFSE'; indEmit = '0' } // NFS-e Saída (Serviços Prestados)
-  else if (bucket === 16) { codMod = '55'; indEmit = '0' }   // NF-e Saída (Materiais Saídas)
-  else if (bucket === 20) { codMod = '57'; indEmit = '0' }   // CT-e Saída
-  else if (bucket === 21) { codMod = '65'; indEmit = '0' }   // NFC-e Saída
-  else { codMod = '55'; indEmit = '1' }                      // NF-e Entrada (maioria — Materiais Entradas)
+  // Maioria NF-e modelo 55 Recebida/Entrada (compra normal — ind_emit='1',
+  // ind_oper='0'), mas com uma distribuição DETERMINÍSTICA (não aleatória,
+  // via `i % 30`) que garante pelo menos algumas notas em cada combinação
+  // dos DOIS eixos independentes da segregação (ver notasFiscaisTabs.js):
+  //   - ind_emit: '0' = o próprio cliente emitiu (Emitida/o), '1' = terceiro
+  //     emitiu (Recebida/o).
+  //   - ind_oper: natureza da operação (CFOP) — '0' = Entrada, '1' = Saída.
+  // Materiais NF-e e CT-e cruzam os dois eixos (4 combinações cada); Serviços
+  // NFS-e só varia por ind_emit; NFC-e só existe Emitida (mas também gera um
+  // caso ind_emit='1' pra cobrir a aba "NFCe" de Notas Integradas). Com
+  // rand() puro essas combinações raras podiam sair zeradas.
+  const bucket = i % 30
+  let codMod, indEmit, indOper
+  if ([2, 3, 4, 5].includes(bucket)) { codMod = '55'; indEmit = '0'; indOper = '1' }        // Materiais Emitidas — Saídas
+  else if ([6, 7].includes(bucket)) { codMod = '55'; indEmit = '0'; indOper = '0' }         // Materiais Emitidas — Entradas
+  else if (bucket === 8) { codMod = '55'; indEmit = '1'; indOper = '1' }                    // Materiais Recebidas — Saídas
+  else if ([9, 10].includes(bucket)) { codMod = 'NFSE'; indEmit = '0' }                     // Serviços Prestados
+  else if ([11, 12].includes(bucket)) { codMod = 'NFSE'; indEmit = '1' }                    // Serviços Tomados
+  else if ([13, 20].includes(bucket)) { codMod = '57'; indEmit = '1'; indOper = '0' }       // CT-e Recebidos — Entradas
+  else if (bucket === 14) { codMod = '57'; indEmit = '0'; indOper = '1' }                   // CT-e Emitidos — Saídas
+  else if (bucket === 16) { codMod = '57'; indEmit = '0'; indOper = '0' }                   // CT-e Emitidos — Entradas
+  else if (bucket === 21) { codMod = '57'; indEmit = '1'; indOper = '1' }                   // CT-e Recebidos — Saídas
+  else if (bucket === 17) { codMod = '65'; indEmit = '1' }                                  // NFC-e Recebida (Notas Integradas)
+  else if ([18, 19].includes(bucket)) { codMod = '65'; indEmit = '0' }                      // NFC-e Emitidas
+  else { codMod = '55'; indEmit = '1'; indOper = '0' }                                      // Materiais Recebidas — Entradas (maioria)
+  // ind_oper não se aplica a NFS-e/NFC-e na segregação — mantém um valor
+  // plausível (espelhando ind_emit) só pra registro/exibição.
+  if (indOper === undefined) indOper = indEmit === '0' ? '1' : '0'
   const serie = pick([1, 1, 1, 2])
   const numero = 100000 + i
   const aamm = dtDoc.slice(2, 4) + dtDoc.slice(5, 7)
@@ -200,8 +212,8 @@ for (let i = 1; i <= TOTAL_INVOICES; i++) {
     carta_correcao: rand() > 0.9,
     nat_op: pick(NATUREZAS),
     natureza_operacao: pick(NATUREZAS),
-    ind_oper: indEmit === '0' ? '1' : '0', // saída quando emissão própria, senão entrada
-    ind_emit: indEmit, // do ponto de vista do cliente: 0=emissão própria (saída), 1=entrada/terceiro
+    ind_oper: indOper, // natureza da operação (CFOP): 0=Entrada, 1=Saída
+    ind_emit: indEmit, // quem emitiu, do ponto de vista do cliente: 0=Emitida/o (própria), 1=Recebida/o (terceiro)
     n_prot: `1352600${pad(randInt(1000000, 9999999), 8)}`,
 
     company_id: dest.id,
@@ -322,6 +334,8 @@ function filterInvoices(list, params) {
   if (endDate) out = out.filter((inv) => inv.dt_doc <= endDate)
   const indEmit = params.get('ind_emit')
   if (indEmit) out = out.filter((inv) => inv.ind_emit === indEmit)
+  const indOper = params.get('ind_oper')
+  if (indOper) out = out.filter((inv) => inv.ind_oper === indOper)
   return out
 }
 

@@ -98,21 +98,28 @@ const servicosColumns = [
   { id: 'feedback', label: 'Feedback', defaultVisible: true },
 ]
 
-// Segregação de Notas Fiscais/CT-e/NFC-e por tipo de documento e direção (ver
-// notasFiscaisTabs.js — mesma ótica de ind_emit usada em Notas Integradas).
-// A navegação entre sub-telas vive na sidebar; `activeTab` aqui é sempre um
+// Segregação de Notas Fiscais/CT-e/NFC-e por tipo de documento e dois eixos
+// independentes (ver notasFiscaisTabs.js): ind_emit (Emitida/Emitido vs
+// Recebida/Recebido — quem é o emitente) e ind_oper (Entrada vs Saída —
+// natureza da operação). Materiais NF-e e CT-e cruzam os dois; Serviços
+// NFS-e só varia por ind_emit; NFC-e não tem segregação nenhuma. A
+// navegação entre sub-telas vive na sidebar; `activeTab` aqui é sempre um
 // desses ids, injetado pelo App.jsx conforme o módulo (list/cte/nfc) atual.
 const TAB_CONFIG = {
-  materiais_saidas:   { type: 'NFE',  indEmit: '0', columns: materiaisColumns, label: 'Materiais NF-e — Saídas' },
-  materiais_entradas: { type: 'NFE',  indEmit: '1', columns: materiaisColumns, label: 'Materiais NF-e — Entradas' },
+  materiais_emitidas_entradas:  { type: 'NFE',  indEmit: '0', indOper: '0', columns: materiaisColumns, label: 'Materiais NF-e — Emitidas — Entradas' },
+  materiais_emitidas_saidas:    { type: 'NFE',  indEmit: '0', indOper: '1', columns: materiaisColumns, label: 'Materiais NF-e — Emitidas — Saídas' },
+  materiais_recebidas_entradas: { type: 'NFE',  indEmit: '1', indOper: '0', columns: materiaisColumns, label: 'Materiais NF-e — Recebidas — Entradas' },
+  materiais_recebidas_saidas:   { type: 'NFE',  indEmit: '1', indOper: '1', columns: materiaisColumns, label: 'Materiais NF-e — Recebidas — Saídas' },
   servicos_prestados: { type: 'NFSE', indEmit: '0', columns: servicosColumns, label: 'Serviços NFS-e — Prestados' },
   servicos_tomados:   { type: 'NFSE', indEmit: '1', columns: servicosColumns, label: 'Serviços NFS-e — Tomados' },
-  cte_saidas:          { type: 'CTE',  indEmit: '0', columns: fretesColumns,  label: 'CT-e — Saídas' },
-  cte_entradas:        { type: 'CTE',  indEmit: '1', columns: fretesColumns,  label: 'CT-e — Entradas' },
-  nfc_saidas:           { type: 'NFCE', indEmit: '0', columns: nfcColumns,    label: 'NFC-e — Saídas' },
+  cte_emitidos_entradas:  { type: 'CTE', indEmit: '0', indOper: '0', columns: fretesColumns, label: 'CT-e — Emitidos — Entradas' },
+  cte_emitidos_saidas:    { type: 'CTE', indEmit: '0', indOper: '1', columns: fretesColumns, label: 'CT-e — Emitidos — Saídas' },
+  cte_recebidos_entradas: { type: 'CTE', indEmit: '1', indOper: '0', columns: fretesColumns, label: 'CT-e — Recebidos — Entradas' },
+  cte_recebidos_saidas:   { type: 'CTE', indEmit: '1', indOper: '1', columns: fretesColumns, label: 'CT-e — Recebidos — Saídas' },
+  nfc_emitidas: { type: 'NFCE', indEmit: '0', columns: nfcColumns, label: 'NFC-e — Emitidas' },
 }
 
-const DEFAULT_TAB = 'materiais_entradas'
+const DEFAULT_TAB = 'materiais_recebidas_entradas'
 
 const PROBLEM_TYPE_LABELS = {
   municipio_incidencia: 'Município Incidência',
@@ -544,19 +551,21 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   const codModMap = { NFE: '55', CTE: '57', NFSE: 'NFSE', NFCE: '65' }
   const currentCodMod = currentType ? codModMap[currentType] : null
   const currentIndEmit = activeCfg.indEmit
+  const currentIndOper = activeCfg.indOper
 
-  // Status counts per tab (filtrado por cod_mod + ind_emit + empresas + datas).
+  // Status counts per tab (filtrado por cod_mod + ind_emit + ind_oper + empresas + datas).
   // Invalidacao acontece nas mutations relevantes (DetailView, EscrituracaoTab,
   // useUndoEscrituracao) — sem polling de 60s, que era custo inutil em abas
   // ociosas (multiplica # de tabs abertas x analistas).
   const { data: statusCounts = {} } = useQuery({
-    queryKey: ['statusCounts', currentCodMod, currentIndEmit, selectedCompanyIds, startDate, endDate],
+    queryKey: ['statusCounts', currentCodMod, currentIndEmit, currentIndOper, selectedCompanyIds, startDate, endDate],
     queryFn: () => api.getStatusCounts(
       selectedCompanyIds.length > 0 ? selectedCompanyIds : undefined,
       currentCodMod,
       startDate || undefined,
       endDate || undefined,
-      currentIndEmit || undefined
+      currentIndEmit || undefined,
+      currentIndOper || undefined
     ),
     staleTime: 60_000,
   })
@@ -591,6 +600,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     search: debouncedSearch || undefined,
     codMod: currentCodMod || undefined,
     indEmit: currentIndEmit || undefined,
+    indOper: currentIndOper || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     statusAnalise: statusAnaliseFilter || undefined,
@@ -1222,13 +1232,16 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
               </Button>
             )}
             <Select value={exportTipo || SELECT_ALL_VALUE} onValueChange={(v) => setExportTipo(v === SELECT_ALL_VALUE ? '' : v)}>
-              <SelectTrigger className="h-8 text-sm w-auto" title="Tipo de NF a exportar (Todos = uma aba por tipo)">
+              <SelectTrigger className="h-8 text-sm w-auto" title="Segregação da extração (Emitidas x Recebidas) — período vem dos filtros de data acima">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={SELECT_ALL_VALUE}>Todos os tipos</SelectItem>
-                <SelectItem value="entrada">Entradas</SelectItem>
-                <SelectItem value="saida">Saídas</SelectItem>
+                {/* Valor da API continua 'entrada'/'saida' — só o rótulo virou
+                    Emitidas/Recebidas pra bater com a nomenclatura da segregação
+                    (pedido da Eliz: extração separada por Emitidas x Recebidas). */}
+                <SelectItem value="entrada">Recebidas</SelectItem>
+                <SelectItem value="saida">Emitidas</SelectItem>
                 <SelectItem value="servico">Serviços</SelectItem>
                 <SelectItem value="cte">CT-e</SelectItem>
               </SelectContent>
