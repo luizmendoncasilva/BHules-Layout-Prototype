@@ -44,10 +44,13 @@ export default function App() {
   const [currentView, setCurrentView] = useState('list')
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [previousView, setPreviousView] = useState('list')
-  const [listActiveTab, setListActiveTab] = useState('Materiais')
   // Sub-tela ativa por módulo — cada módulo com sub-navegação na sidebar
-  // (Notas Integradas, Legislação, Dados SPED, BHub Tax) guarda aqui a sua.
+  // (Notas Fiscais, CTE, NFC, Notas Integradas, Legislação, Dados SPED,
+  // BHub Tax) guarda aqui a sua.
   const [subViews, setSubViews] = useState({
+    list: 'materiais_entradas',
+    cte: 'cte_saidas',
+    nfc: 'nfc_saidas',
     integradas: 'nfse_saida',
     crawler: 'NFE',
     sped: 'fiscal',
@@ -139,9 +142,23 @@ export default function App() {
           <AppHeader currentView={currentView} subViews={subViews} onNavigate={handleNavigate} />
 
           <div className="flex-1 min-h-0 flex flex-col">
-          {/* ListView stays mounted (hidden) to preserve filters/scroll */}
+          {/* ListView stays mounted (hidden) to preserve filters/scroll — uma
+              instância por módulo segregado (Notas Fiscais, CTE, NFC), cada
+              uma controlando sua própria sub-tela (activeTab) via subViews. */}
           <div className={currentView === 'list' ? 'flex flex-col h-full' : 'hidden'}>
-            <ListView onRowClick={handleRowClick} activeTab={listActiveTab} onTabChange={setListActiveTab}
+            <ListView onRowClick={handleRowClick} activeTab={subViews.list} onTabChange={(t) => setSubViews((p) => ({ ...p, list: t }))}
+              startDate={sharedStartDate} onStartDateChange={setSharedStartDate}
+              endDate={sharedEndDate} onEndDateChange={setSharedEndDate}
+              companyIds={sharedCompanyIds} onCompanyIdsChange={setSharedCompanyIds} />
+          </div>
+          <div className={currentView === 'cte' ? 'flex flex-col h-full' : 'hidden'}>
+            <ListView onRowClick={handleRowClick} activeTab={subViews.cte} onTabChange={(t) => setSubViews((p) => ({ ...p, cte: t }))}
+              startDate={sharedStartDate} onStartDateChange={setSharedStartDate}
+              endDate={sharedEndDate} onEndDateChange={setSharedEndDate}
+              companyIds={sharedCompanyIds} onCompanyIdsChange={setSharedCompanyIds} />
+          </div>
+          <div className={currentView === 'nfc' ? 'flex flex-col h-full' : 'hidden'}>
+            <ListView onRowClick={handleRowClick} activeTab={subViews.nfc} onTabChange={(t) => setSubViews((p) => ({ ...p, nfc: t }))}
               startDate={sharedStartDate} onStartDateChange={setSharedStartDate}
               endDate={sharedEndDate} onEndDateChange={setSharedEndDate}
               companyIds={sharedCompanyIds} onCompanyIdsChange={setSharedCompanyIds} />

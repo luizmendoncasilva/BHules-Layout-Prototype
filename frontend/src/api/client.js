@@ -81,7 +81,7 @@ export const api = {
     }),
 
   // Invoices
-  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType } = {}) => {
+  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -91,6 +91,11 @@ export const api = {
     if (status) params.set('status_camu', status)
     if (source) params.set('source', source)
     if (codMod) params.set('cod_mod', codMod)
+    // Direção sob a ótica do cliente — '0' = emissão própria (saída), '1' =
+    // terceiro (entrada). Cada sub-tela da segregação de Notas Fiscais/CTE/NFC
+    // manda a sua (ver notasFiscaisTabs.js), substituindo o antigo
+    // `only_incoming=true` fixo (que só cobria NF-e 55 de entrada).
+    if (indEmit) params.set('ind_emit', indEmit)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
     if (escrituracaoStatus) params.set('escrituracao_status', escrituracaoStatus)
@@ -98,7 +103,6 @@ export const api = {
     if (cnpjEmit) params.set('cnpj_emit', cnpjEmit)
     if (cnpjDest) params.set('cnpj_dest', cnpjDest)
     if (problemType) params.set('problem_type', problemType)
-    params.set('only_incoming', 'true')
     return request(`/invoices?${params}`)
   },
 
@@ -150,12 +154,13 @@ export const api = {
     return request(`/invoices/batch-analysis/summary?${params}`)
   },
 
-  getStatusCounts: (companyIds, codMod, startDate, endDate) => {
+  getStatusCounts: (companyIds, codMod, startDate, endDate, indEmit) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     if (codMod) params.set('cod_mod', codMod)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
+    if (indEmit) params.set('ind_emit', indEmit)
     return request(`/invoices/status-counts?${params}`)
   },
 

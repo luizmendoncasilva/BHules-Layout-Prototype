@@ -4,6 +4,7 @@ import {
   Scale, FileText, Database, UserPlus, Cloud,
   Layers, Settings2, Stethoscope, Coins, FileStack, PieChart, History, Gavel,
   ChevronsLeft, ChevronsRight, ChevronDown, ScrollText, Landmark, BarChart3, Activity,
+  Truck, ShoppingCart,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { IconButton, Tooltip, TooltipTrigger, TooltipContent } from '@bhubai/bhub-design-system'
@@ -11,6 +12,7 @@ import BHubLogo from '../shared/BHubLogo'
 import { api } from '../../api/client'
 import { INTEGRADAS_TABS } from '../../constants/integradasTabs'
 import { SPED_TABS } from '../../constants/spedTabs'
+import { NOTAS_FISCAIS_GROUPS, CTE_TABS, NFC_TABS } from '../../constants/notasFiscaisTabs'
 
 export const CRAWLER_TABS = [
   { id: 'NFE', label: 'Leis Federais e Estaduais', icon: ScrollText },
@@ -120,6 +122,90 @@ function ExpandableNavItem({ icon, label, view, tabs, currentView, subView, expa
   )
 }
 
+// Igual ao ExpandableNavItem, mas com mais um nível: cada "grupo" (ex:
+// Materiais NFe) é seu próprio accordion dentro do accordion do módulo
+// (Notas Fiscais). Usado só onde a segregação exige agrupar sub-telas por
+// tipo de documento antes de separar por direção (saída/entrada).
+function NestedExpandableNavItem({ icon, label, view, groups, isActive, subView, expanded, onNavigate, setExpanded, badge }) {
+  const [open, setOpen] = useState(isActive)
+  const [openGroups, setOpenGroups] = useState(() => new Set(groups.map((g) => g.id)))
+
+  useEffect(() => {
+    if (isActive) setOpen(true)
+  }, [isActive])
+
+  const toggleGroup = (id) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <div>
+      <NavItem
+        expanded={expanded}
+        icon={icon}
+        label={label}
+        isActive={isActive}
+        chevronOpen={open}
+        badge={badge}
+        onClick={() => {
+          if (!expanded) {
+            setExpanded(true)
+            setOpen(true)
+            onNavigate?.(view, subView || groups[0].tabs[0].id)
+            return
+          }
+          setOpen((v) => !v)
+        }}
+      />
+      {expanded && open && (
+        <div className="ml-4 pl-3 border-l border-sidebar-border flex flex-col gap-0.5 mt-0.5 mb-1">
+          {groups.map((group) => {
+            const groupOpen = openGroups.has(group.id)
+            return (
+              <div key={group.id}>
+                <button
+                  onClick={() => toggleGroup(group.id)}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left w-full text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
+                  <group.icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate flex-1">{group.label}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 shrink-0 text-sidebar-foreground/60 transition-transform duration-150 ${groupOpen ? '' : '-rotate-90'}`}
+                  />
+                </button>
+                {groupOpen && (
+                  <div className="ml-4 pl-3 border-l border-sidebar-border/60 flex flex-col gap-0.5 mt-0.5 mb-1">
+                    {group.tabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => onNavigate?.(view, tab.id)}
+                        className={[
+                          'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left',
+                          isActive && subView === tab.id
+                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        ].join(' ')}
+                      >
+                        <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Divider() {
   return <div className="h-px bg-sidebar-border my-1 mx-2" />
 }
@@ -175,7 +261,24 @@ export default function Sidebar({ currentView, subViews = {}, onNavigate }) {
 
         <Divider />
 
-        <NavItem expanded={expanded} icon={FileText} label="Notas Fiscais" isActive={currentView === 'list' || currentView === 'detail'} onClick={() => onNavigate?.('list')} badge={reviewCount} />
+        <NestedExpandableNavItem
+          icon={FileText} label="Notas Fiscais" view="list" groups={NOTAS_FISCAIS_GROUPS}
+          isActive={currentView === 'list' || currentView === 'detail'} subView={subViews.list} expanded={expanded}
+          onNavigate={onNavigate} setExpanded={setExpanded} badge={reviewCount}
+        />
+
+        <ExpandableNavItem
+          icon={Truck} label="CTE" view="cte" tabs={CTE_TABS}
+          currentView={currentView} subView={subViews.cte} expanded={expanded}
+          onNavigate={onNavigate} setExpanded={setExpanded}
+        />
+
+        <ExpandableNavItem
+          icon={ShoppingCart} label="NFC" view="nfc" tabs={NFC_TABS}
+          currentView={currentView} subView={subViews.nfc} expanded={expanded}
+          onNavigate={onNavigate} setExpanded={setExpanded}
+        />
+
         <NavItem expanded={expanded} icon={Layers} label="Resolução em Lote" isActive={currentView === 'batch'} onClick={() => onNavigate?.('batch')} />
 
         <ExpandableNavItem

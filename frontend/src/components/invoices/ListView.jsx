@@ -61,12 +61,18 @@ const fretesColumns = [
   { id: 'feedback', label: 'Feedback', defaultVisible: true },
 ]
 
-const fretesOsColumns = [
-  { id: 'number', label: 'Ordem de Serviço', defaultVisible: true },
+const nfcColumns = [
+  { id: 'number', label: 'NFC-e', defaultVisible: true },
+  { id: 'issuerDocument', label: 'CNPJ Emitente', defaultVisible: true },
+  { id: 'issuerName', label: 'Nome do Emitente', defaultVisible: true },
+  { id: 'amount', label: 'Valor', defaultVisible: true },
+  { id: 'issueDate', label: 'Data de Emissão', defaultVisible: true },
   { id: 'statusAnalise', label: 'Status Análise', defaultVisible: true },
-  { id: 'status', label: 'Motor BHub', defaultVisible: true },
-  { id: 'issueDate', label: 'Data', defaultVisible: true },
   { id: 'integracaoApi', label: 'Integração API', defaultVisible: true },
+  { id: 'escrituracaoStatus', label: 'Escrituração', defaultVisible: true },
+  { id: 'status', label: 'Motor BHub', defaultVisible: true },
+  { id: 'key', label: 'Chave da Nota Fiscal', defaultVisible: false },
+  { id: 'serie', label: 'Série', defaultVisible: false },
   { id: 'feedback', label: 'Feedback', defaultVisible: true },
 ]
 
@@ -92,21 +98,21 @@ const servicosColumns = [
   { id: 'feedback', label: 'Feedback', defaultVisible: true },
 ]
 
-// Isolamento: a análise serve SÓ NFe 55 de entrada (aba Materiais). NFSe
-// (incl. entrada) saiu da análise e vive na tela "Notas Integradas".
+// Segregação de Notas Fiscais/CTE/NFC por tipo de documento e direção (ver
+// notasFiscaisTabs.js — mesma ótica de ind_emit usada em Notas Integradas).
+// A navegação entre sub-telas vive na sidebar; `activeTab` aqui é sempre um
+// desses ids, injetado pelo App.jsx conforme o módulo (list/cte/nfc) atual.
 const TAB_CONFIG = {
-  'Materiais':    { type: 'NFE',  columns: materiaisColumns },
+  materiais_saidas:   { type: 'NFE',  indEmit: '0', columns: materiaisColumns, label: 'Materiais NFe — Saídas' },
+  materiais_entradas: { type: 'NFE',  indEmit: '1', columns: materiaisColumns, label: 'Materiais NFe — Entradas' },
+  servicos_prestados: { type: 'NFSE', indEmit: '0', columns: servicosColumns, label: 'Serviços NFSe — Prestados' },
+  servicos_tomados:   { type: 'NFSE', indEmit: '1', columns: servicosColumns, label: 'Serviços NFSe — Tomados' },
+  cte_saidas:          { type: 'CTE',  indEmit: '0', columns: fretesColumns,  label: 'CTE — Saídas' },
+  cte_entradas:        { type: 'CTE',  indEmit: '1', columns: fretesColumns,  label: 'CTE — Entradas' },
+  nfc_saidas:           { type: 'NFCE', indEmit: '0', columns: nfcColumns,    label: 'NFC — Saídas' },
 }
 
-// Keep full config for dropdown filter in "Mais Filtros"
-const ALL_TAB_CONFIG = {
-  'Materiais':    { type: 'NFE',  columns: materiaisColumns },
-  'Fretes - OS':  { type: null,   columns: fretesOsColumns },
-  'Fretes':       { type: 'CTE',  columns: fretesColumns },
-  'Serviços': { type: 'NFSE', columns: servicosColumns },
-}
-
-const TABS = Object.keys(TAB_CONFIG)
+const DEFAULT_TAB = 'materiais_entradas'
 
 const PROBLEM_TYPE_LABELS = {
   municipio_incidencia: 'Município Incidência',
@@ -416,9 +422,10 @@ function FeedbackCell({ invoiceId, isNfse, feedbackMap, onVote, locked }) {
 export default function ListView({ onRowClick, activeTab: activeTabProp, onTabChange, startDate: startDateProp, onStartDateChange, endDate: endDateProp, onEndDateChange, companyIds: companyIdsProp, onCompanyIdsChange }) {
   const { companyName } = useCompany()
   const { data: companies = [] } = useCompanies()
-  const [activeTabLocal, setActiveTabLocal] = useState('Materiais')
+  const [activeTabLocal, setActiveTabLocal] = useState(DEFAULT_TAB)
   const activeTab = activeTabProp ?? activeTabLocal
   const setActiveTab = (tab) => { setActiveTabLocal(tab); onTabChange?.(tab) }
+  const activeCfg = TAB_CONFIG[activeTab] || TAB_CONFIG[DEFAULT_TAB]
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(100)
   const [search, setSearch] = useState('')
@@ -457,7 +464,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   const undoMutation = useUndoEscrituracao()
 
   // Sorted companies (alphabetically), filtered by tab type flags
-  const isNfseTab = activeTab === 'Serviços'
+  const isNfseTab = activeCfg.type === 'NFSE'
   const sortedCompanies = useMemo(
     () => [...companies]
       .filter(c => isNfseTab ? c.nfse_servicos_enabled : c.nfe_entrada_enabled)
@@ -472,7 +479,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // Columns state per tab
   const [columns, setColumns] = useState(
-    TAB_CONFIG['Materiais'].columns.map((c) => ({ ...c, visible: c.defaultVisible }))
+    activeCfg.columns.map((c) => ({ ...c, visible: c.defaultVisible }))
   )
 
   // Date range (shared via props when available)
@@ -498,8 +505,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // Reset columns and filters when tab changes
   useEffect(() => {
-    const cfg = (TAB_CONFIG[activeTab] || ALL_TAB_CONFIG[activeTab] || TAB_CONFIG['Materiais'])
-    setColumns(cfg.columns.map((c) => ({ ...c, visible: c.defaultVisible })))
+    setColumns(activeCfg.columns.map((c) => ({ ...c, visible: c.defaultVisible })))
     setColumnFilters({})
     setProblemTypeFilter('')
     setSelectedCompanyIds([])
@@ -534,21 +540,23 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     return () => document.removeEventListener('mousedown', handler)
   }, [companyDropdownOpen])
 
-  const currentType = (TAB_CONFIG[activeTab] || ALL_TAB_CONFIG[activeTab] || TAB_CONFIG['Materiais']).type
-  const codModMap = { NFE: '55', CTE: '57', NFSE: 'NFSE' }
+  const currentType = activeCfg.type
+  const codModMap = { NFE: '55', CTE: '57', NFSE: 'NFSE', NFCE: '65' }
   const currentCodMod = currentType ? codModMap[currentType] : null
+  const currentIndEmit = activeCfg.indEmit
 
-  // Status counts per tab (filtered by cod_mod + selected companies + date range).
+  // Status counts per tab (filtrado por cod_mod + ind_emit + empresas + datas).
   // Invalidacao acontece nas mutations relevantes (DetailView, EscrituracaoTab,
   // useUndoEscrituracao) — sem polling de 60s, que era custo inutil em abas
   // ociosas (multiplica # de tabs abertas x analistas).
   const { data: statusCounts = {} } = useQuery({
-    queryKey: ['statusCounts', currentCodMod, selectedCompanyIds, startDate, endDate],
+    queryKey: ['statusCounts', currentCodMod, currentIndEmit, selectedCompanyIds, startDate, endDate],
     queryFn: () => api.getStatusCounts(
       selectedCompanyIds.length > 0 ? selectedCompanyIds : undefined,
       currentCodMod,
       startDate || undefined,
-      endDate || undefined
+      endDate || undefined,
+      currentIndEmit || undefined
     ),
     staleTime: 60_000,
   })
@@ -582,6 +590,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     size: pageSize,
     search: debouncedSearch || undefined,
     codMod: currentCodMod || undefined,
+    indEmit: currentIndEmit || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     statusAnalise: statusAnaliseFilter || undefined,
@@ -865,13 +874,12 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   const total = data?.total || 0
   const totalPages = data?.total_pages || 1
 
-  // Feedback handler — routes to correct API based on tab (Materiais vs Servicos)
+  // Feedback handler — routes to correct API based on tab (Materiais/CTE/NFC vs Serviços)
   const handleFeedbackVote = useCallback((invoiceId, vote, comment, categories) => {
     setFeedbackMap((prev) => ({ ...prev, [invoiceId]: vote }))
-    const isNfse = activeTab === 'Serviços'
-    const mutation = isNfse ? nfseFeedbackMutation : nfeFeedbackMutation
+    const mutation = isNfseTab ? nfseFeedbackMutation : nfeFeedbackMutation
     mutation.mutate({ invoiceId, vote, comment, categories })
-  }, [activeTab, nfeFeedbackMutation, nfseFeedbackMutation])
+  }, [isNfseTab, nfeFeedbackMutation, nfseFeedbackMutation])
 
   const toggleColumn = useCallback((id) => {
     setColumns((cols) => cols.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)))
@@ -1029,15 +1037,10 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {/* Top Tabs */}
-      <div className="px-6 pt-3 bg-background">
-        <Tabs value={activeTab} onValueChange={(tab) => { setActiveTab(tab); setStatusAnaliseFilter('') }}>
-          <TabsList variant="default">
-            {TABS.map((tab) => (
-              <TabsTrigger key={tab} value={tab}>{tab}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+      {/* Título — a navegação entre sub-telas (tipo/direção) agora vive na
+          sidebar (ver Sidebar.jsx: Notas Fiscais / CTE / NFC). */}
+      <div className="px-6 py-4 border-b border-border">
+        <h1 className="text-xl font-semibold text-foreground">{activeCfg.label}</h1>
       </div>
 
       {/* Toolbar — single row: filters left, action icons right */}

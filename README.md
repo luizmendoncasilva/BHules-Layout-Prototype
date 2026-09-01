@@ -16,12 +16,3 @@ Como o app fica dentro de `frontend/` (não na raiz do repo), configure no proje
 **Settings → General → Root Directory** → `frontend`
 
 Build Command e Output Directory podem ficar nos padrões do Vite (`npm run build` / `dist`).
-
-## Variáveis de ambiente
-
-Veja `frontend/.env.example`. Para rodar como protótipo sem backend/Auth0 reais, defina:
-
-```
-VITE_AUTH0_DISABLED=true
-VITE_MOCK_DATA=true
-```
