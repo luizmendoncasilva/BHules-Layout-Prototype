@@ -2,13 +2,13 @@ import { FileUp, FileDown, Receipt, Package } from 'lucide-react'
 
 // Árvore de segregação de "Notas Fiscais" — mesmo padrão aplicado em
 // "Notas Integradas" (ver integradasTabs.js), agora para a tela de análise.
-// Cada grupo (Serviços NFSe / Materiais NFe) tem duas sub-telas por direção,
+// Cada grupo (Serviços NFS-e / Materiais NF-e) tem duas sub-telas por direção,
 // sob a ótica do CLIENTE via ind_emit: '0' = emissão própria (SAÍDA),
 // '1' = terceiro (ENTRADA).
 export const NOTAS_FISCAIS_GROUPS = [
   {
     id: 'servicos-nfse',
-    label: 'Serviços NFSe',
+    label: 'Serviços NFS-e',
     icon: Receipt,
     tabs: [
       { id: 'servicos_prestados', label: 'Prestados', icon: FileUp, codMod: 'NFSE', indEmit: '0' },
@@ -17,7 +17,7 @@ export const NOTAS_FISCAIS_GROUPS = [
   },
   {
     id: 'materiais-nfe',
-    label: 'Materiais NFe',
+    label: 'Materiais NF-e',
     icon: Package,
     tabs: [
       { id: 'materiais_saidas', label: 'Saídas', icon: FileUp, codMod: '55', indEmit: '0' },
@@ -26,7 +26,7 @@ export const NOTAS_FISCAIS_GROUPS = [
   },
 ]
 
-// CTE e NFC vivem como itens irmãos de "Notas Fiscais" na sidebar (não
+// CT-e e NFC-e vivem como itens irmãos de "Notas Fiscais" na sidebar (não
 // aninhados dentro dela) — mesma segregação por direção que os grupos acima.
 export const CTE_TABS = [
   { id: 'cte_saidas', label: 'Saídas', icon: FileUp, codMod: '57', indEmit: '0' },

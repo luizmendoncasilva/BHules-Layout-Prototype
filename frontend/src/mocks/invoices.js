@@ -165,18 +165,18 @@ for (let i = 1; i <= TOTAL_INVOICES; i++) {
   // alimenta ListView/BatchAnalysis), mas com uma distribuição DETERMINÍSTICA
   // (não aleatória) que garante pelo menos algumas notas em cada uma das
   // abas de "Notas Integradas" e da segregação de "Notas Fiscais"/CTE/NFC
-  // (Serviços Prestados/Tomados, Materiais Saídas/Entradas, CTe Saídas/
-  // Entradas, NFCe) — com rand() puro, combinações raras podiam sair zeradas.
+  // (Serviços Prestados/Tomados, Materiais Saídas/Entradas, CT-e Saídas/
+  // Entradas, NFC-e) — com rand() puro, combinações raras podiam sair zeradas.
   const bucket = i % 22
   let codMod, indEmit
-  if (bucket === 17) { codMod = '65'; indEmit = '1' }        // NFCe (Notas Integradas)
-  else if (bucket === 18) { codMod = '57'; indEmit = '1' }   // CTe Entrada
-  else if (bucket === 19) { codMod = 'NFSE'; indEmit = '1' } // NFSe Entrada (Serviços Tomados)
-  else if (bucket === 15) { codMod = 'NFSE'; indEmit = '0' } // NFSe Saída (Serviços Prestados)
-  else if (bucket === 16) { codMod = '55'; indEmit = '0' }   // NFe Saída (Materiais Saídas)
-  else if (bucket === 20) { codMod = '57'; indEmit = '0' }   // CTe Saída
-  else if (bucket === 21) { codMod = '65'; indEmit = '0' }   // NFCe Saída
-  else { codMod = '55'; indEmit = '1' }                      // NFe Entrada (maioria — Materiais Entradas)
+  if (bucket === 17) { codMod = '65'; indEmit = '1' }        // NFC-e (Notas Integradas)
+  else if (bucket === 18) { codMod = '57'; indEmit = '1' }   // CT-e Entrada
+  else if (bucket === 19) { codMod = 'NFSE'; indEmit = '1' } // NFS-e Entrada (Serviços Tomados)
+  else if (bucket === 15) { codMod = 'NFSE'; indEmit = '0' } // NFS-e Saída (Serviços Prestados)
+  else if (bucket === 16) { codMod = '55'; indEmit = '0' }   // NF-e Saída (Materiais Saídas)
+  else if (bucket === 20) { codMod = '57'; indEmit = '0' }   // CT-e Saída
+  else if (bucket === 21) { codMod = '65'; indEmit = '0' }   // NFC-e Saída
+  else { codMod = '55'; indEmit = '1' }                      // NF-e Entrada (maioria — Materiais Entradas)
   const serie = pick([1, 1, 1, 2])
   const numero = 100000 + i
   const aamm = dtDoc.slice(2, 4) + dtDoc.slice(5, 7)

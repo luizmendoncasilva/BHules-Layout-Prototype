@@ -12,8 +12,8 @@ import { NOTAS_FISCAIS_TABS, CTE_TABS, NFC_TABS } from './notasFiscaisTabs'
 export const VIEW_BREADCRUMBS = {
   list: { label: 'Notas Fiscais', subTabs: NOTAS_FISCAIS_TABS },
   detail: { label: 'Detalhe da Nota', parent: 'list' },
-  cte: { label: 'CTE', subTabs: CTE_TABS },
-  nfc: { label: 'NFC', subTabs: NFC_TABS },
+  cte: { label: 'CT-e', subTabs: CTE_TABS },
+  nfc: { label: 'NFC-e', subTabs: NFC_TABS },
   batch: { label: 'Resolução em Lote' },
   integradas: { label: 'Notas Integradas', subTabs: INTEGRADAS_TABS },
   crawler: { label: 'Legislação', subTabs: CRAWLER_TABS },

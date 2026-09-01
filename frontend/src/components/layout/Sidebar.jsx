@@ -123,7 +123,7 @@ function ExpandableNavItem({ icon, label, view, tabs, currentView, subView, expa
 }
 
 // Igual ao ExpandableNavItem, mas com mais um nível: cada "grupo" (ex:
-// Materiais NFe) é seu próprio accordion dentro do accordion do módulo
+// Materiais NF-e) é seu próprio accordion dentro do accordion do módulo
 // (Notas Fiscais). Usado só onde a segregação exige agrupar sub-telas por
 // tipo de documento antes de separar por direção (saída/entrada).
 function NestedExpandableNavItem({ icon, label, view, groups, isActive, subView, expanded, onNavigate, setExpanded, badge }) {
@@ -268,13 +268,13 @@ export default function Sidebar({ currentView, subViews = {}, onNavigate }) {
         />
 
         <ExpandableNavItem
-          icon={Truck} label="CTE" view="cte" tabs={CTE_TABS}
+          icon={Truck} label="CT-e" view="cte" tabs={CTE_TABS}
           currentView={currentView} subView={subViews.cte} expanded={expanded}
           onNavigate={onNavigate} setExpanded={setExpanded}
         />
 
         <ExpandableNavItem
-          icon={ShoppingCart} label="NFC" view="nfc" tabs={NFC_TABS}
+          icon={ShoppingCart} label="NFC-e" view="nfc" tabs={NFC_TABS}
           currentView={currentView} subView={subViews.nfc} expanded={expanded}
           onNavigate={onNavigate} setExpanded={setExpanded}
         />

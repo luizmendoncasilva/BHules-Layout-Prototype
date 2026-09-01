@@ -25,7 +25,7 @@ import ExportProgressModal from './ExportProgressModal'
 // --- Column definitions per tab (matching original design) ---
 
 const materiaisColumns = [
-  { id: 'number', label: 'NFe', defaultVisible: true },
+  { id: 'number', label: 'NF-e', defaultVisible: true },
   { id: 'issuerDocument', label: 'CNPJ Emitente', defaultVisible: true },
   { id: 'issuerName', label: 'Nome do Emitente', defaultVisible: true },
   { id: 'amount', label: 'Valor', defaultVisible: true },
@@ -48,7 +48,7 @@ const materiaisColumns = [
 ]
 
 const fretesColumns = [
-  { id: 'number', label: 'CTe', defaultVisible: true },
+  { id: 'number', label: 'CT-e', defaultVisible: true },
   { id: 'statusAnalise', label: 'Status Análise', defaultVisible: true },
   { id: 'status', label: 'Motor BHub', defaultVisible: true },
   { id: 'key', label: 'Chave CT-e', defaultVisible: true },
@@ -98,18 +98,18 @@ const servicosColumns = [
   { id: 'feedback', label: 'Feedback', defaultVisible: true },
 ]
 
-// Segregação de Notas Fiscais/CTE/NFC por tipo de documento e direção (ver
+// Segregação de Notas Fiscais/CT-e/NFC-e por tipo de documento e direção (ver
 // notasFiscaisTabs.js — mesma ótica de ind_emit usada em Notas Integradas).
 // A navegação entre sub-telas vive na sidebar; `activeTab` aqui é sempre um
 // desses ids, injetado pelo App.jsx conforme o módulo (list/cte/nfc) atual.
 const TAB_CONFIG = {
-  materiais_saidas:   { type: 'NFE',  indEmit: '0', columns: materiaisColumns, label: 'Materiais NFe — Saídas' },
-  materiais_entradas: { type: 'NFE',  indEmit: '1', columns: materiaisColumns, label: 'Materiais NFe — Entradas' },
-  servicos_prestados: { type: 'NFSE', indEmit: '0', columns: servicosColumns, label: 'Serviços NFSe — Prestados' },
-  servicos_tomados:   { type: 'NFSE', indEmit: '1', columns: servicosColumns, label: 'Serviços NFSe — Tomados' },
-  cte_saidas:          { type: 'CTE',  indEmit: '0', columns: fretesColumns,  label: 'CTE — Saídas' },
-  cte_entradas:        { type: 'CTE',  indEmit: '1', columns: fretesColumns,  label: 'CTE — Entradas' },
-  nfc_saidas:           { type: 'NFCE', indEmit: '0', columns: nfcColumns,    label: 'NFC — Saídas' },
+  materiais_saidas:   { type: 'NFE',  indEmit: '0', columns: materiaisColumns, label: 'Materiais NF-e — Saídas' },
+  materiais_entradas: { type: 'NFE',  indEmit: '1', columns: materiaisColumns, label: 'Materiais NF-e — Entradas' },
+  servicos_prestados: { type: 'NFSE', indEmit: '0', columns: servicosColumns, label: 'Serviços NFS-e — Prestados' },
+  servicos_tomados:   { type: 'NFSE', indEmit: '1', columns: servicosColumns, label: 'Serviços NFS-e — Tomados' },
+  cte_saidas:          { type: 'CTE',  indEmit: '0', columns: fretesColumns,  label: 'CT-e — Saídas' },
+  cte_entradas:        { type: 'CTE',  indEmit: '1', columns: fretesColumns,  label: 'CT-e — Entradas' },
+  nfc_saidas:           { type: 'NFCE', indEmit: '0', columns: nfcColumns,    label: 'NFC-e — Saídas' },
 }
 
 const DEFAULT_TAB = 'materiais_entradas'
