@@ -559,7 +559,7 @@ export default function DetailView({ invoice, onBack }) {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col min-w-0 bg-card m-4 rounded-lg shadow-sm border border-border">
           {/* Sub Tabs */}
-          <div className="px-6 pt-4 flex justify-between items-center">
+          <div className="px-6 pt-4 pb-3 flex justify-between items-center">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               {/* !h-11 força por cima do h-9 fixo do DS (ele vem com um
                   seletor group-data-[orientation] que empata/ganha de um
