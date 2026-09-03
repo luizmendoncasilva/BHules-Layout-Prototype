@@ -71,7 +71,10 @@ export default function AppHeader({ currentView, subViews, onNavigate }) {
     <div className="h-14 shrink-0 border-b border-border bg-card flex items-center justify-between px-4 gap-3">
       {crumbs.length > 0 ? (
         <Breadcrumb className="min-w-0">
-          <BreadcrumbList className="flex-nowrap overflow-hidden">
+          {/* DS usa text-sm por padrão — reduzido pra text-xs (mesma escala
+              tipográfica do DS, só um degrau menor) porque aqui é metadado
+              de navegação, não conteúdo principal do header. */}
+          <BreadcrumbList className="flex-nowrap overflow-hidden text-xs">
             {crumbs.map((crumb, idx) => {
               const isLast = idx === crumbs.length - 1
               return (

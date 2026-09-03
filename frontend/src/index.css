@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "@bhubai/bhub-design-system/dist/styles.css";
 
+/* O DS mora fora da árvore que o Tailwind varre por padrão (pacote irmão,
+   não node_modules) — sem isso, classes usadas só dentro dos componentes do
+   DS (ex: `border-transparent` em tabs.tsx/badge.tsx/switch.tsx/kbd.tsx)
+   nunca são geradas aqui, mesmo com o token (--muted etc.) definido acima.
+   Sintoma: componente renderiza com a cor certa mas borda/fundo "crus" (ex:
+   abas do DetailView com borda cinza visível em vez de transparente). */
+@source "../../design-system/dist";
+
 @theme {
   /* O DS referencia --font-inter/--font-geist-mono (via --font-sans/--font-mono
      no @theme inline) mas nunca define o valor — no pacote original isso vem

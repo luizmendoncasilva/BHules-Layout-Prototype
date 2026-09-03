@@ -150,6 +150,9 @@ const REGIME_FEDERAL_LABELS = {
   SIMPLES_NACIONAL: 'Simples Nacional',
   LUCRO_PRESUMIDO: 'Lucro Presumido',
   LUCRO_REAL: 'Lucro Real',
+  // Opção única que agrupa isentas e demais regimes fora dos três acima
+  // (confirmado com a Eliz — não lista cada um separado).
+  DEMAIS_REGIMES: 'Demais Regimes',
 }
 
 // Shared class for the icon-only "expand on hover" action-bar buttons —

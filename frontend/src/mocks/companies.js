@@ -126,10 +126,10 @@ export const MOCK_COMPANIES = [
     cnpj: '89.012.345/0001-77',
     uf: 'SP',
     ativo: true,
-    regime_tributario: 'SIMPLES_NACIONAL',
+    regime_tributario: 'DEMAIS_REGIMES',
     inscricao_estadual: 'ISENTO',
     cnae: '6201-5/01',
-    nfe_entrada_enabled: false,
+    nfe_entrada_enabled: true,
     nfse_servicos_enabled: true,
     cnaes_detalhes: JSON.stringify([
       { code: '6201-5/01', description: 'Desenvolvimento de programas de computador sob encomenda', principal: true },
