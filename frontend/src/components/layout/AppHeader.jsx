@@ -36,10 +36,19 @@ function buildCrumbs(currentView, subViews, previousView, selectedInvoice) {
   const last = chain[chain.length - 1]
   if (last.subPath) {
     const path = last.subPath(subViews?.[last.view]) || []
-    crumbs.push(...path.map((label) => ({ label })))
+    // Só a folha (último segmento, ex: "Entrada") volta pra tabela — os
+    // grupos intermediários (ex: "Materiais NF-e", "Recebidas") não são uma
+    // tela própria, só existem como agrupamento visual na sidebar. Marcando
+    // com `view` aqui ela vira link quando não é o último crumb da trilha
+    // (ex: dentro do detalhe de uma nota); na própria lista ela é o último
+    // crumb e o render já trata o último como não-clicável de qualquer forma.
+    crumbs.push(...path.map((label, idx) => ({
+      label,
+      view: idx === path.length - 1 ? last.view : undefined,
+    })))
   } else {
     const activeSubTab = last.subTabs?.find((t) => t.id === subViews?.[last.view])
-    if (activeSubTab) crumbs.push({ label: activeSubTab.label })
+    if (activeSubTab) crumbs.push({ label: activeSubTab.label, view: last.view })
   }
 
   if (currentView === 'detail' && selectedInvoice?.id != null) {

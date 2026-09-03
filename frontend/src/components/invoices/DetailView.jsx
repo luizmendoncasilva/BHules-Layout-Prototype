@@ -561,19 +561,24 @@ export default function DetailView({ invoice, onBack }) {
           {/* Sub Tabs */}
           <div className="px-6 pt-4 flex justify-between items-center">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList variant="default">
+              {/* !h-11 força por cima do h-9 fixo do DS (ele vem com um
+                  seletor group-data-[orientation] que empata/ganha de um
+                  h-* comum — só o !important garante a sobrescrita). Os
+                  triggers acompanham sozinhos (usam h-[calc(100%-1px)] do
+                  próprio DS, relativo à altura do pai). */}
+              <TabsList variant="default" className="!h-11 p-1.5">
                 {isNfse ? (
                   <>
-                    <TabsTrigger value="retencoes">Retencoes</TabsTrigger>
-                    <TabsTrigger value="reinf">REINF Cruzamento</TabsTrigger>
-                    <TabsTrigger value="espelho">Dados NFS-e</TabsTrigger>
-                    <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
+                    <TabsTrigger value="retencoes" className="px-3">Retencoes</TabsTrigger>
+                    <TabsTrigger value="reinf" className="px-3">REINF Cruzamento</TabsTrigger>
+                    <TabsTrigger value="espelho" className="px-3">Dados NFS-e</TabsTrigger>
+                    <TabsTrigger value="auditoria" className="px-3">Auditoria</TabsTrigger>
                   </>
                 ) : (
                   <>
-                    <TabsTrigger value="escrituracao">Escrituracao</TabsTrigger>
-                    <TabsTrigger value="espelho">Espelho NF-e</TabsTrigger>
-                    <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
+                    <TabsTrigger value="escrituracao" className="px-3">Escrituracao</TabsTrigger>
+                    <TabsTrigger value="espelho" className="px-3">Espelho NF-e</TabsTrigger>
+                    <TabsTrigger value="auditoria" className="px-3">Auditoria</TabsTrigger>
                   </>
                 )}
               </TabsList>
