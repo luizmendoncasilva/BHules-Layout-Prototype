@@ -139,7 +139,7 @@ export default function App() {
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 h-full">
-          <AppHeader currentView={currentView} subViews={subViews} onNavigate={handleNavigate} />
+          <AppHeader currentView={currentView} subViews={subViews} onNavigate={handleNavigate} previousView={previousView} selectedInvoice={selectedInvoice} />
 
           <div className="flex-1 min-h-0 flex flex-col">
           {/* ListView stays mounted (hidden) to preserve filters/scroll — uma

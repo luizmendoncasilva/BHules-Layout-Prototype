@@ -14,9 +14,17 @@ import { VIEW_BREADCRUMBS } from '../../constants/viewBreadcrumbs'
 // Monta a trilha de breadcrumb pra uma view/subView atual, seguindo a
 // cadeia de `parent` até a raiz. O último item é sempre a página atual
 // (não clicável); os demais navegam de volta pra cada nível.
-function buildCrumbs(currentView, subViews) {
+//
+// `detail` (visualização de uma nota) é um caso especial: seu "pai" não é
+// fixo — depende de onde a nota foi aberta (Notas Fiscais, CT-e, NFC-e ou
+// Resolução em Lote), então usamos `previousView` pra montar a trilha
+// completa daquele módulo (grupo > sub-grupo > direção) e acrescentamos o id
+// da nota no final — ex: "Notas Fiscais > Materiais NF-e > Recebidas >
+// Entrada > #1042" — em vez do genérico "Detalhe da Nota".
+function buildCrumbs(currentView, subViews, previousView, selectedInvoice) {
+  const baseView = currentView === 'detail' ? (previousView || 'list') : currentView
   const chain = []
-  let view = currentView
+  let view = baseView
   let guard = 0
   while (view && VIEW_BREADCRUMBS[view] && guard++ < 10) {
     chain.unshift({ view, ...VIEW_BREADCRUMBS[view] })
@@ -26,8 +34,18 @@ function buildCrumbs(currentView, subViews) {
 
   const crumbs = chain.map((meta) => ({ view: meta.view, label: meta.label }))
   const last = chain[chain.length - 1]
-  const activeSubTab = last.subTabs?.find((t) => t.id === subViews?.[last.view])
-  if (activeSubTab) crumbs.push({ label: activeSubTab.label })
+  if (last.subPath) {
+    const path = last.subPath(subViews?.[last.view]) || []
+    crumbs.push(...path.map((label) => ({ label })))
+  } else {
+    const activeSubTab = last.subTabs?.find((t) => t.id === subViews?.[last.view])
+    if (activeSubTab) crumbs.push({ label: activeSubTab.label })
+  }
+
+  if (currentView === 'detail' && selectedInvoice?.id != null) {
+    crumbs.push({ label: `#${selectedInvoice.id}` })
+  }
+
   return crumbs
 }
 
@@ -43,7 +61,7 @@ const TYPE_CONFIG = {
 // Header global e minimalista — presente em todas as telas: sino de
 // notificações (abre um drawer com a prévia dos alertas) e o avatar do
 // usuário à direita.
-export default function AppHeader({ currentView, subViews, onNavigate }) {
+export default function AppHeader({ currentView, subViews, onNavigate, previousView, selectedInvoice }) {
   const { user, logout } = useAuth()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showNotifDrawer, setShowNotifDrawer] = useState(false)
@@ -65,7 +83,7 @@ export default function AppHeader({ currentView, subViews, onNavigate }) {
   const initials = user?.name
     ? user.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
     : '?'
-  const crumbs = buildCrumbs(currentView, subViews)
+  const crumbs = buildCrumbs(currentView, subViews, previousView, selectedInvoice)
 
   return (
     <div className="h-14 shrink-0 border-b border-border bg-card flex items-center justify-between px-4 gap-3">

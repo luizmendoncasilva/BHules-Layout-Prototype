@@ -88,3 +88,22 @@ function flattenTabs(nodes) {
 
 export const NOTAS_FISCAIS_TABS = flattenTabs(NOTAS_FISCAIS_GROUPS)
 export const CTE_TABS = flattenTabs(CTE_GROUPS)
+
+// Caminho completo (labels dos grupos + folha) até uma sub-tela — usado
+// pelo breadcrumb do header pra mostrar a árvore inteira (ex: "Materiais
+// NF-e > Recebidas > Entrada"), não só o último nível como NOTAS_FISCAIS_TABS.
+function findPath(nodes, id, prefix = []) {
+  for (const node of nodes) {
+    if (node.tabs) {
+      const tab = node.tabs.find((t) => t.id === id)
+      if (tab) return [...prefix, node.label, tab.label]
+    } else if (node.groups) {
+      const found = findPath(node.groups, id, [...prefix, node.label])
+      if (found) return found
+    }
+  }
+  return null
+}
+
+export const pathForNotasFiscais = (id) => findPath(NOTAS_FISCAIS_GROUPS, id)
+export const pathForCte = (id) => findPath(CTE_GROUPS, id)
