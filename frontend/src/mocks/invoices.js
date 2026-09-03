@@ -336,6 +336,15 @@ function filterInvoices(list, params) {
   if (indEmit) out = out.filter((inv) => inv.ind_emit === indEmit)
   const indOper = params.get('ind_oper')
   if (indOper) out = out.filter((inv) => inv.ind_oper === indOper)
+  // Regime federal do NOSSO cliente — vem de MOCK_COMPANIES (empresa dona da
+  // nota via company_id), não de um campo na própria invoice.
+  const regimeTributario = params.get('regime_tributario')
+  if (regimeTributario) {
+    out = out.filter((inv) => {
+      const company = MOCK_COMPANIES.find((c) => c.id === inv.company_id)
+      return company?.regime_tributario === regimeTributario
+    })
+  }
   return out
 }
 

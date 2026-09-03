@@ -81,7 +81,7 @@ export const api = {
     }),
 
   // Invoices
-  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType } = {}) => {
+  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType, regimeTributario } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -106,6 +106,10 @@ export const api = {
     if (cnpjEmit) params.set('cnpj_emit', cnpjEmit)
     if (cnpjDest) params.set('cnpj_dest', cnpjDest)
     if (problemType) params.set('problem_type', problemType)
+    // Regime federal do NOSSO cliente (Simples Nacional/Lucro Presumido/Lucro
+    // Real) — filtra pela empresa dona da nota (company_id), não pelo CNPJ
+    // emitente/destinatário bruto do documento (pedido da Eliz).
+    if (regimeTributario) params.set('regime_tributario', regimeTributario)
     return request(`/invoices?${params}`)
   },
 
@@ -157,7 +161,7 @@ export const api = {
     return request(`/invoices/batch-analysis/summary?${params}`)
   },
 
-  getStatusCounts: (companyIds, codMod, startDate, endDate, indEmit, indOper) => {
+  getStatusCounts: (companyIds, codMod, startDate, endDate, indEmit, indOper, regimeTributario) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     if (codMod) params.set('cod_mod', codMod)
@@ -165,6 +169,7 @@ export const api = {
     if (endDate) params.set('end_date', endDate)
     if (indEmit) params.set('ind_emit', indEmit)
     if (indOper) params.set('ind_oper', indOper)
+    if (regimeTributario) params.set('regime_tributario', regimeTributario)
     return request(`/invoices/status-counts?${params}`)
   },
 

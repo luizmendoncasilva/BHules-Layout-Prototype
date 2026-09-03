@@ -141,6 +141,17 @@ const PROBLEM_TYPE_LABELS = {
 // disallows an empty-string SelectItem value.
 const SELECT_ALL_VALUE = '__all__'
 
+// Regime federal do NOSSO cliente (campo `regime_tributario` em
+// MOCK_COMPANIES) — pedido da Eliz. Filtra pelo regime da empresa dona da
+// nota (`company_id`), não do emitente/destinatário do documento em si: em
+// Saídas nosso cliente é quem emite, em Entradas é quem recebe, mas os dois
+// casos resolvem pro mesmo `company_id` e portanto pro mesmo filtro.
+const REGIME_FEDERAL_LABELS = {
+  SIMPLES_NACIONAL: 'Simples Nacional',
+  LUCRO_PRESUMIDO: 'Lucro Presumido',
+  LUCRO_REAL: 'Lucro Real',
+}
+
 // Shared class for the icon-only "expand on hover" action-bar buttons —
 // consolidated from 8 repeated `max-w-[150px]` magic values.
 const EXPAND_LABEL_CLS = 'max-w-0 overflow-hidden group-hover:max-w-36 transition-all duration-200 whitespace-nowrap'
@@ -459,6 +470,10 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   // Problem type filter (NFS-e)
   const [problemTypeFilter, setProblemTypeFilter] = useState('')
 
+  // Regime federal do nosso cliente (Simples Nacional/Lucro Presumido/Lucro
+  // Real) — não é específico de aba, então não reseta ao trocar de tab.
+  const [regimeFilter, setRegimeFilter] = useState('')
+
   // Batch escrituracao state
   const [batchRunning, setBatchRunning] = useState(false)
   const [batchResult, setBatchResult] = useState(null)
@@ -535,7 +550,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   }, [cnpjDestFilter])
 
   // Reset page and selection on filter change
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setBatchResult(null) }, [selectedCompanyIds, activeTab, debouncedSearch, startDate, endDate, statusAnaliseFilter, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter])
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setBatchResult(null) }, [selectedCompanyIds, activeTab, debouncedSearch, startDate, endDate, statusAnaliseFilter, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter, regimeFilter])
 
   // Close company dropdown on outside click
   useEffect(() => {
@@ -558,14 +573,15 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   // useUndoEscrituracao) — sem polling de 60s, que era custo inutil em abas
   // ociosas (multiplica # de tabs abertas x analistas).
   const { data: statusCounts = {} } = useQuery({
-    queryKey: ['statusCounts', currentCodMod, currentIndEmit, currentIndOper, selectedCompanyIds, startDate, endDate],
+    queryKey: ['statusCounts', currentCodMod, currentIndEmit, currentIndOper, selectedCompanyIds, startDate, endDate, regimeFilter],
     queryFn: () => api.getStatusCounts(
       selectedCompanyIds.length > 0 ? selectedCompanyIds : undefined,
       currentCodMod,
       startDate || undefined,
       endDate || undefined,
       currentIndEmit || undefined,
-      currentIndOper || undefined
+      currentIndOper || undefined,
+      regimeFilter || undefined
     ),
     staleTime: 60_000,
   })
@@ -607,6 +623,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     cnpjEmit: debouncedCnpjEmit || undefined,
     cnpjDest: debouncedCnpjDest || undefined,
     problemType: problemTypeFilter || undefined,
+    regimeTributario: regimeFilter || undefined,
   })
 
   // Invoices from API (already filtered by cod_mod server-side)
@@ -623,8 +640,9 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     if (debouncedCnpjDest) filters.push({ key: 'cnpjDest', label: `Destinatario: ${debouncedCnpjDest}`, clear: () => { setCnpjDestFilter(''); setDebouncedCnpjDest('') } })
     if (problemTypeFilter) filters.push({ key: 'problem', label: `Problema: ${problemTypeFilter}`, clear: () => setProblemTypeFilter('') })
     if (statusAnaliseFilter) filters.push({ key: 'status', label: `Status: ${statusAnaliseFilter}`, clear: () => setStatusAnaliseFilter('') })
+    if (regimeFilter) filters.push({ key: 'regime', label: `Regime Federal: ${REGIME_FEDERAL_LABELS[regimeFilter] || regimeFilter}`, clear: () => setRegimeFilter('') })
     return filters
-  }, [selectedCompanyIds, startDate, endDate, debouncedSearch, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter, statusAnaliseFilter, companyFilterLabel])
+  }, [selectedCompanyIds, startDate, endDate, debouncedSearch, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter, statusAnaliseFilter, regimeFilter, companyFilterLabel])
 
   // statusCounts now managed by React Query (queryKey: ['statusCounts'])
 
@@ -1144,6 +1162,23 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
               </SelectContent>
             </Select>
           )}
+          {/* Regime federal do nosso cliente — em Saídas ele é o emitente, em
+              Entradas o destinatário, mas o filtro é sempre sobre a mesma
+              empresa (company_id da nota), então fica visível em todas as abas. */}
+          <Select
+            value={regimeFilter || SELECT_ALL_VALUE}
+            onValueChange={(v) => setRegimeFilter(v === SELECT_ALL_VALUE ? '' : v)}
+          >
+            <SelectTrigger className={`h-8 text-sm w-auto ${regimeFilter ? 'border-primary bg-primary/5 text-primary font-medium' : ''}`}>
+              <SelectValue placeholder="Regime Federal" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SELECT_ALL_VALUE}>Regime Federal</SelectItem>
+              {Object.entries(REGIME_FEDERAL_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {/* Date filter — always visible */}
           <Calendar className="w-4 h-4 text-muted-foreground" />
           <DatePicker
@@ -1330,6 +1365,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
               setSelectedCompanyIds([]); setStartDate(''); setEndDate('')
               setSearch(''); setDebouncedSearch(''); setCnpjEmitFilter(''); setDebouncedCnpjEmit('')
               setCnpjDestFilter(''); setDebouncedCnpjDest(''); setProblemTypeFilter(''); setStatusAnaliseFilter('')
+              setRegimeFilter('')
             }}
             className="text-xs text-warning-text hover:opacity-80 underline ml-1"
           >
