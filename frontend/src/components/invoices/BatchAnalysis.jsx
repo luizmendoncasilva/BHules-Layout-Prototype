@@ -21,6 +21,7 @@ import { useToast } from '../shared/Toast'
 // Sentinel value for the "Todas" (empty-string) option in Radix Select — Radix
 // disallows an empty-string SelectItem value.
 const ESC_ALL_VALUE = '__all__'
+import { filtrarEmpresas } from '../../utils/matchEmpresa'
 
 // --- Formatters ---
 function fmt(val) {
@@ -89,6 +90,8 @@ const CAMPO_LABELS = {
   prestador: 'Prestador',
   todos: 'Todos',
   codigo_servico: 'Cod. Serviço',
+  iss_retido: 'ISS Retido',
+  aliquota_iss: 'Alíquota ISS',
 }
 
 const ESC_STATUS_OPTIONS = [
@@ -171,6 +174,12 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
   const [approveRunning, setApproveRunning] = useState(false)
   const [dismissRunning, setDismissRunning] = useState(false)
   const [escriturarRunning, setEscriturarRunning] = useState(false)
+
+  // Edição em lote (linha a linha) — hoje só usado por Serviços (NFS-e).
+  // Guarda os valores editados por item_id pra sobrepor no ItemTable, e cada
+  // campo commitado dispara um evento de auditoria com o diff (campo,
+  // valor_antigo, valor_novo), não só "quem mexeu".
+  const [itemEdits, setItemEdits] = useState({})
 
   const { data: companies } = useCompanies()
 
@@ -405,6 +414,27 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
     finally { setDismissRunning(false) }
   }
 
+  const handleItemFieldEdit = async (item, campo, valorAntigo, valorNovo) => {
+    if (valorAntigo === valorNovo) return
+    setItemEdits((prev) => ({
+      ...prev,
+      [item.item_id]: { ...prev[item.item_id], [campo]: valorNovo },
+    }))
+    try {
+      await api.submitItemCorrection({
+        invoiceId: item.invoice_id,
+        itemId: item.item_id,
+        campo,
+        valorAntigo,
+        valorNovo,
+        analista: 'batch-analyst',
+      })
+      toast.success(`${CAMPO_LABELS[campo] || campo} atualizado`, { description: `${valorAntigo ?? '—'} → ${valorNovo}` })
+    } catch (e) {
+      toast.error('Erro ao salvar correção', { description: e.message })
+    }
+  }
+
   const handleBatchEscriturar = async () => {
     if (selectedInvoiceIds.length === 0) return
     setEscriturarRunning(true)
@@ -435,9 +465,8 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
         return c.nfe_entrada_enabled
       })
       .sort((a, b) => (a.razao_social || a.name || '').localeCompare(b.razao_social || b.name || ''))
-    if (!companySearch) return list
-    const q = companySearch.toLowerCase()
-    return list.filter(c => (c.razao_social || c.name || '').toLowerCase().includes(q) || (c.cnpj || '').includes(q))
+    // Razão social, nome fantasia ou CNPJ com/sem máscara (GL-C4).
+    return filtrarEmpresas(list, companySearch)
   }, [companies, companySearch, isNfse])
 
   const toggleCompany = (id) => { setCompanyFilter(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); setPage(1) }
@@ -741,7 +770,7 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
               {/* Expanded: direct item list */}
               {isExpanded && (
                 <div className="bg-muted/70 border-t border-border p-3">
-                  <ItemTable items={prob.items} selectedItems={selectedItems} toggleItem={toggleItem} onViewInvoice={onViewInvoice} isNfse={isNfse} />
+                  <ItemTable items={prob.items} selectedItems={selectedItems} toggleItem={toggleItem} onViewInvoice={onViewInvoice} isNfse={isNfse} itemEdits={itemEdits} onFieldEdit={handleItemFieldEdit} />
                 </div>
               )}
             </div>
@@ -762,8 +791,68 @@ function DivSevBadge({ severity }) {
   return <Badge variant={SEV_VARIANT[severity] || 'secondary'} className="text-xs px-1.5 py-0">{severity}</Badge>
 }
 
+// ──────── Inline-editable cells (correção em lote de serviços) ────────
+// Commit-on-blur: evita disparar uma chamada de auditoria a cada tecla.
+function EditableTextCell({ value, onCommit, mono, edited }) {
+  const [draft, setDraft] = useState(value ?? '')
+  useEffect(() => { setDraft(value ?? '') }, [value])
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { const v = draft.trim(); if (v !== (value ?? '')) onCommit(v) }}
+      onClick={(e) => e.stopPropagation()}
+      className={`w-full bg-transparent border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary ${mono ? 'font-mono' : ''} ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
+    />
+  )
+}
+
+function EditableAliquotaCell({ value, onCommit, edited }) {
+  const [draft, setDraft] = useState(value != null ? String(value) : '')
+  useEffect(() => { setDraft(value != null ? String(value) : '') }, [value])
+  return (
+    <div className="relative w-16" onClick={(e) => e.stopPropagation()}>
+      <input
+        type="number"
+        step="0.01"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          const parsed = draft === '' ? null : Number(draft)
+          if (parsed !== (value ?? null)) onCommit(parsed)
+        }}
+        className={`w-full bg-transparent border rounded pl-1.5 pr-4 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
+      />
+      <span className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
+    </div>
+  )
+}
+
+function EditableIssRetidoCell({ value, onCommit, edited }) {
+  const [current, setCurrent] = useState(!!value)
+  useEffect(() => { setCurrent(!!value) }, [value])
+  return (
+    <Select
+      value={current ? 'sim' : 'nao'}
+      onValueChange={(v) => { const next = v === 'sim'; setCurrent(next); onCommit(next) }}
+    >
+      <SelectTrigger
+        onClick={(e) => e.stopPropagation()}
+        className={`h-auto w-20 py-0.5 text-xs ${edited ? 'border-warning-border bg-warning-subtle' : ''}`}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="sim">Sim</SelectItem>
+        <SelectItem value="nao">Não</SelectItem>
+      </SelectContent>
+    </Select>
+  )
+}
+
 // ──────── Compact item table with inline divergences ────────
-function ItemTable({ items, selectedItems, toggleItem, onViewInvoice, indent, isNfse }) {
+function ItemTable({ items, selectedItems, toggleItem, onViewInvoice, indent, isNfse, itemEdits, onFieldEdit }) {
   const [expandedRows, setExpandedRows] = useState(new Set())
   const toggleRow = (id) => setExpandedRows(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
@@ -826,12 +915,31 @@ function ItemTable({ items, selectedItems, toggleItem, onViewInvoice, indent, is
                       <TableCell className="px-2 py-1.5 text-muted-foreground truncate max-w-xs" title={item.emit_razao_social}>
                         {item.emit_razao_social?.slice(0, 22) || fmtCnpj(item.emit_cnpj)}
                       </TableCell>
-                      <TableCell className="px-2 py-1.5 font-mono text-foreground">{item.codigo_servico || '-'}</TableCell>
+                      <TableCell className="px-2 py-1.5">
+                        <EditableTextCell
+                          mono
+                          value={item.codigo_servico ?? ''}
+                          edited={itemEdits?.[item.item_id]?.codigo_servico !== undefined}
+                          onCommit={(v) => onFieldEdit(item, 'codigo_servico', item.codigo_servico ?? null, v)}
+                        />
+                      </TableCell>
                       <TableCell className="px-2 py-1.5 text-muted-foreground truncate max-w-xs" title={item.descr_compl}>
                         {item.descr_compl?.slice(0, 40) || '-'}
                       </TableCell>
-                      <TableCell className="px-2 py-1.5">{item.iss_retido ? <span className="text-success-text font-medium">Sim</span> : <span className="text-muted-foreground">Não</span>}</TableCell>
-                      <TableCell className="px-2 py-1.5 font-mono">{item.aliquota_iss != null ? `${item.aliquota_iss}%` : '-'}</TableCell>
+                      <TableCell className="px-2 py-1.5">
+                        <EditableIssRetidoCell
+                          value={item.iss_retido}
+                          edited={itemEdits?.[item.item_id]?.iss_retido !== undefined}
+                          onCommit={(v) => onFieldEdit(item, 'iss_retido', item.iss_retido ? 'Sim' : 'Não', v ? 'Sim' : 'Não')}
+                        />
+                      </TableCell>
+                      <TableCell className="px-2 py-1.5">
+                        <EditableAliquotaCell
+                          value={item.aliquota_iss}
+                          edited={itemEdits?.[item.item_id]?.aliquota_iss !== undefined}
+                          onCommit={(v) => onFieldEdit(item, 'aliquota_iss', item.aliquota_iss != null ? `${item.aliquota_iss}%` : null, v != null ? `${v}%` : null)}
+                        />
+                      </TableCell>
                       <TableCell className="px-2 py-1.5 text-muted-foreground truncate max-w-xs">{item.regime_prestador || '-'}</TableCell>
                       <TableCell className="px-2 py-1.5 text-right font-medium">{fmt(item.vl_item)}</TableCell>
                     </>

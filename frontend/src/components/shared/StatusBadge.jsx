@@ -26,14 +26,28 @@ const STATUS_MAP = {
   Cancelada:      { tone: 'secondary', dot: 'bg-neutral-400', label: 'Cancelada' },
   CANCELLED:      { tone: 'secondary', dot: 'bg-neutral-400', label: 'Cancelada' },
   NAO_VALIDADA:   { tone: 'secondary', dot: 'bg-neutral-400', label: 'Não Validada' },
+  VALIDADA:       { tone: 'secondary', dot: 'bg-neutral-400', label: 'Validada' },
   // Status análise
   CONFORME:       { tone: 'success', dot: 'bg-success', label: 'Conforme' },
   REQUER_REVISAO: { tone: 'warning', dot: 'bg-warning', label: 'Requer Revisão' },
   BLOQUEADO:      { tone: 'destructive', dot: 'bg-destructive', label: 'Bloqueado' },
   BLOQUEADA:      { tone: 'destructive', dot: 'bg-destructive', label: 'Bloqueada' },
+  // Trava de Erros Graves de CFOP (auditoria pós-decisão do motor)
+  ERRO_GRAVE:     { tone: 'destructive', dot: 'bg-destructive', label: 'Erro Grave' },
   DISPENSADO:     { tone: 'secondary', dot: 'bg-neutral-400', label: 'Dispensada' },
   DISPENSADA:     { tone: 'secondary', dot: 'bg-neutral-400', label: 'Dispensada' },
   ESCRITURADA:    { tone: 'info', dot: 'bg-info', label: 'Escriturada' },
+  // ESCRITURADA_NFSE — mesmo rótulo ("Escriturada"), cor diferente. Em NF-e o
+  // azul de ESCRITURADA sinaliza "entregue ao Onvio/Domínio"; NFS-e não publica
+  // para lugar nenhum (decisão de produto 04/08), a escrituração é a conclusão
+  // da análise fiscal e para nela. Verde = concluído aqui. Valor só do
+  // frontend: o backend segue emitindo ESCRITURADA/PENDENTE.
+  ESCRITURADA_NFSE: { tone: 'success', dot: 'bg-success', label: 'Escriturada' },
+  // ESCRITURADA_NFTS — coluna "Escrituração NFTS": o robô declarou a nota na
+  // prefeitura (escriturada_autopilot_em, write-back da API de apurações).
+  // Tom info para não confundir com o verde do OK do analista
+  // (ESCRITURADA_NFSE). Valor só do frontend.
+  ESCRITURADA_NFTS: { tone: 'info', dot: 'bg-info', label: 'Escriturada' },
   // NFS-e
   ANALISADA:      { tone: 'success', dot: 'bg-success', label: 'Analisada' },
   REVISAO_HUMANA: { tone: 'warning', dot: 'bg-warning', label: 'Requer Revisão' },

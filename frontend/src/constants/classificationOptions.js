@@ -29,6 +29,13 @@ export const CSOSN = [
   { code: '900', description: 'Outros' },
 ]
 
+// CSOSN válidos para CORREÇÃO DE ENTRADA (Célula 19/08, item 4.1): 101 é
+// exclusivo de saída — adquirente do Simples Nacional não tem crédito de ICMS
+// (LC 123/2006 art. 23). O servidor rejeita 101 com 422 de qualquer forma;
+// aqui a opção nem é oferecida. A lista completa acima permanece para exibir
+// códigos declarados pelo EMITENTE.
+export const CSOSN_ENTRADA = CSOSN.filter((o) => o.code !== '101')
+
 // SPED registro 0200 — tipo do item.
 export const TIPO_ITEM = [
   { code: '00', description: 'Mercadoria para revenda' },

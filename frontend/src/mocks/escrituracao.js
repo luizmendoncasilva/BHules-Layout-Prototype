@@ -189,7 +189,13 @@ mockRoute(/^\/nfse\/validation\/run\/(\d+)$/, 'POST', () => ({ ok: true }))
 
 mockRoute('/nfse/validation/run-batch', 'POST', () => ({ ok: true, total_processed: 2, total_errors: 0 }))
 
-mockRoute('/nfse/validation/run-all', 'POST', () => ({ ok: true, total_processed: 8, total_errors: 0 }))
+mockRoute('/nfse/validation/run-all', 'POST', () => ({
+  ok: true,
+  total_processed: 8,
+  total_errors: 0,
+  // Lido pelo banner de resultado do NfseDashboard.
+  status_counts: { CONFORME: 6, REQUER_REVISAO: 2 },
+}))
 
 // ── Validation / NFS-e analysis (retenções + REINF) ─────────────────────
 function buildValidationAnalysis(invoiceId) {
@@ -290,7 +296,26 @@ mockRoute(/^\/nfse\/validation\/analysis\/(\d+)$/, 'GET', (_path, match) => buil
 
 mockRoute(/^\/nfse\/validation\/alerts\/(\d+)$/, 'GET', () => ({ alerts: [] }))
 
+// Forma lida pelo NfseDashboard (total_nfse, divergence_rate, contadores por
+// status, retencoes_totais, severity_distribution, analise_status). Os campos
+// antigos (total_notas_analisadas, total_retencao_*) ficam por compatibilidade.
 mockRoute('/nfse/validation/dashboard/stats', 'GET', () => ({
+  total_nfse: 342,
+  divergence_rate: 14.3,
+  status_analise_counts: { CONFORME: 251, REQUER_REVISAO: 49, BLOQUEADO: 7, PENDENTE: 35 },
+  validation_status: { VALIDADA: 307, NAO_VALIDADA: 35 },
+  retencoes_totais: {
+    valor_total_servicos: 1486320.75,
+    irrf: 18540.32,
+    pis: 2140.11,
+    cofins: 9884.67,
+    csll: 3294.89,
+    inss: 15230.44,
+    iss: 22110.9,
+  },
+  total_alerts: 118,
+  severity_distribution: { BLOQUEIO: 7, ALERTA_CRITICO: 14, ALERTA: 41, SUGESTAO: 33, INFORMATIVO: 23 },
+  analise_status: { SUCESSO: 251, VERIFICAR: 56, PENDENTE: 35 },
   total_notas_analisadas: 42,
   total_retencao_irrf: 18540.32,
   total_retencao_pis: 2140.11,

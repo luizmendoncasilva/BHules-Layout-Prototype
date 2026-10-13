@@ -21,7 +21,9 @@ function pad(n, len) {
   return String(n).padStart(len, '0')
 }
 function isoDate(daysAgo) {
-  const d = new Date('2026-07-31T00:00:00')
+  // Âncora = hoje: o filtro padrão do painel passou a ser o mês corrente
+  // (getMesCorrenteRange, vindo do oficial), então os dados acompanham a data.
+  const d = new Date(new Date().toDateString())
   d.setDate(d.getDate() - daysAgo)
   return d.toISOString().slice(0, 10)
 }
@@ -66,7 +68,13 @@ function buildPayload(type, invoiceId) {
     case 'invoice.escrituracao.problem_reported':
       return { comment: 'Divergência de NCM identificada na conferência manual.' }
     case 'invoice.override.submitted':
-      return { invoice_id: invoiceId, fields_changed: ['cfop', 'cst_icms'] }
+      return {
+        invoice_id: invoiceId,
+        changes: [
+          { campo: 'cfop', valor_antigo: '1102', valor_novo: '1101' },
+          { campo: 'cst_icms', valor_antigo: '90', valor_novo: '00' },
+        ],
+      }
     default:
       return null
   }
@@ -89,9 +97,30 @@ const AUDIT_EVENTS = Array.from({ length: TOTAL_EVENTS }, (_, i) => {
   }
 }).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
+// Eventos criados em tempo de execução pela sessão atual (correções feitas
+// pelo usuário no prototipo, ex. edição em lote de serviços). Mantidos à
+// parte do fixture estático AUDIT_EVENTS pra não precisar re-seedar tudo;
+// mergeados na leitura por getAuditEvents/getInvoiceAuditEvents.
+export const EXTRA_AUDIT_EVENTS = []
+let extraSeq = 900000
+
+export function addAuditEvent({ event_type, actor, actor_type, invoice_id, payload }) {
+  const evt = {
+    id: extraSeq++,
+    created_at: new Date().toISOString(),
+    event_type,
+    actor,
+    actor_type,
+    invoice_id,
+    payload,
+  }
+  EXTRA_AUDIT_EVENTS.unshift(evt)
+  return evt
+}
+
 mockRoute('/audit/events', 'GET', (path) => {
   const params = paramsOf(path)
-  let out = AUDIT_EVENTS
+  let out = [...EXTRA_AUDIT_EVENTS, ...AUDIT_EVENTS]
   const eventType = params.get('event_type')
   if (eventType) out = out.filter((e) => e.event_type === eventType)
   const actor = params.get('actor')

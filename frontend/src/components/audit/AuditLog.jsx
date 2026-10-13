@@ -8,6 +8,7 @@ import {
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
   DatePicker, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@bhubai/bhub-design-system'
+import { actorFilterValue, displayActor } from '../invoices/auditEventTypes'
 
 function parseIsoDate(str) {
   if (!str) return null
@@ -40,7 +41,27 @@ const EVENT_LABELS = {
   'invoice.escrituracao.problem_reported': 'Problema reportado',
   'invoice.override.submitted': 'Correção de classificação',
   'invoice.approved.as_feedback': 'Aprovada (feedback)',
+  'invoice.learning.corrected': 'Aprendizado corrigido',
+  'invoice.nfse.liberacao_publicada': 'Liberação de NFS-e publicada',
   'company.hard_deleted': 'Empresa excluída (hard-delete)',
+}
+
+const FIELD_LABELS = {
+  cfop: 'CFOP',
+  cst_icms: 'CST ICMS',
+  iss_retido: 'ISS Retido',
+  aliquota_iss: 'Alíquota ISS',
+  codigo_servico: 'Cód. Serviço',
+}
+
+function formatDetails(payload) {
+  if (!payload) return '—'
+  if (Array.isArray(payload.changes) && payload.changes.length > 0) {
+    return payload.changes
+      .map((c) => `${FIELD_LABELS[c.campo] || c.campo}: ${c.valor_antigo ?? '—'} → ${c.valor_novo ?? '—'}`)
+      .join(' · ')
+  }
+  return JSON.stringify(payload)
 }
 
 const ACTOR_TYPE_BADGE_VARIANT = {
@@ -71,7 +92,12 @@ export default function AuditLog() {
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['auditEvents', filters, page, pageSize],
-    queryFn: () => api.getAuditEvents({ ...filters, limit: pageSize, offset: (page - 1) * pageSize }),
+    queryFn: () => api.getAuditEvents({
+      ...filters,
+      actor: actorFilterValue(filters.actor),
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    }),
     keepPreviousData: true,
   })
 
@@ -186,12 +212,12 @@ export default function AuditLog() {
                   <TableCell>{EVENT_LABELS[e.event_type] || e.event_type}</TableCell>
                   <TableCell>
                     <Badge variant={ACTOR_TYPE_BADGE_VARIANT[e.actor_type] || 'secondary'}>
-                      {e.actor}
+                      {displayActor(e.actor)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{e.invoice_id ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs max-w-xs truncate whitespace-nowrap" title={e.payload ? JSON.stringify(e.payload) : ''}>
-                    {e.payload ? JSON.stringify(e.payload) : '—'}
+                  <TableCell className="text-muted-foreground text-xs max-w-sm truncate whitespace-nowrap" title={e.payload ? formatDetails(e.payload) : ''}>
+                    {formatDetails(e.payload)}
                   </TableCell>
                 </TableRow>
               ))}

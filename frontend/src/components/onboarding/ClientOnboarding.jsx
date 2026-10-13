@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, UserPlus, Building2, CheckCircle2, XCircle, Loader2, ChevronRight, MapPin, FileText, ToggleLeft, ToggleRight, ShieldCheck, ShieldX, ShieldAlert, Shield, FileCheck, Receipt, RefreshCw, AlertTriangle, ArrowRight, Upload, Database, Zap, Trash2 } from 'lucide-react'
+import { Search, UserPlus, Building2, CheckCircle2, XCircle, Loader2, ChevronRight, MapPin, FileText, ToggleLeft, ToggleRight, ShieldCheck, ShieldX, ShieldAlert, Shield, FileCheck, Receipt, RefreshCw, AlertTriangle, ArrowRight, Upload, Database, Zap, Trash2, Download } from 'lucide-react'
 import {
   Button, IconButton, Tooltip, TooltipTrigger, TooltipContent,
   Badge, Checkbox, Input, Label, Card,
@@ -58,6 +58,7 @@ export default function ClientOnboarding() {
   const [togglingId, setTogglingId] = useState(null)
   const [togglingTypeId, setTogglingTypeId] = useState(null)
   const [syncingCerts, setSyncingCerts] = useState(false)
+  const [exportingCompanies, setExportingCompanies] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null) // empresa selecionada pra deletar
 
   const toast = useToast()
@@ -93,6 +94,26 @@ export default function ClientOnboarding() {
       console.error('Certificate sync error:', e)
     } finally {
       setSyncingCerts(false)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    setExportingCompanies(true)
+    try {
+      // Mesmos filtros ativos da tela (busca aplicada ao painel)
+      const blob = await api.exportOnboardedCompanies({ search: debouncedCompanySearch || undefined })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `empresas_habilitadas_${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error('Erro ao exportar Excel: ' + e.message)
+    } finally {
+      setExportingCompanies(false)
     }
   }
 
@@ -408,6 +429,22 @@ export default function ClientOnboarding() {
                 className="pl-8 pr-3 h-8 text-xs w-64"
               />
             </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleExportExcel}
+                  disabled={exportingCompanies}
+                >
+                  {exportingCompanies
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Download className="w-3.5 h-3.5" />}
+                  {exportingCompanies ? 'Exportando...' : 'Exportar Excel'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Exportar as empresas do painel (com os filtros aplicados) em Excel</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

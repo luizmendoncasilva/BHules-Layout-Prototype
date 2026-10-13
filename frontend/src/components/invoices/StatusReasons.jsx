@@ -35,6 +35,8 @@ function ExpandableText({ text, className = '', clampLines = 2 }) {
 const severityConfig = {
   BLOQUEIO: { bg: 'bg-destructive-subtle', border: 'border-destructive-border', text: 'text-destructive-text', icon: XCircle, iconColor: 'text-destructive', label: 'Bloqueio', order: 0, badgeVariant: 'destructive' },
   ALERTA_CRITICO: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Critico', order: 1, badgeVariant: 'warning' },
+  // Severidade da escrituração de NF-e (escrituracao_resultado.divergencias)
+  CRITICO: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Critico', order: 1, badgeVariant: 'warning' },
   ALERTA: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Alerta', order: 2, badgeVariant: 'warning' },
   INFORMATIVO: { bg: 'bg-info-subtle', border: 'border-info-border', text: 'text-info-text', icon: Info, iconColor: 'text-info', label: 'Info', order: 3, badgeVariant: 'info' },
   OPORTUNIDADE: { bg: 'bg-success-subtle', border: 'border-success-border', text: 'text-success-text', icon: CheckCircle, iconColor: 'text-success', label: 'Oportunidade', order: 4, badgeVariant: 'success' },
@@ -51,7 +53,12 @@ function ReasonCard({ r }) {
           <div className="flex items-center gap-2">
             <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
             <span className="text-xs text-muted-foreground font-mono">{r.rule_code}</span>
-            {r.field_name && <span className="text-xs text-muted-foreground">({r.field_name})</span>}
+            {r.field_name && r.field_name !== r.rule_code && <span className="text-xs text-muted-foreground">({r.field_name})</span>}
+            {r.num_item != null && (
+              <span className="text-xs text-muted-foreground">
+                Item {r.num_item}{r.item_descricao ? ` — ${r.item_descricao}` : ''}
+              </span>
+            )}
           </div>
           <ExpandableText text={r.description} className={`text-xs mt-0.5 ${cfg.text}`} clampLines={2} />
           {r.current_value && r.expected_value && (

@@ -101,12 +101,14 @@ function Loading() {
 function DadosNotas({ data }) {
   const dn = data?.dados_notas
   const chartData = useMemo(() => {
-    if (!dn) return null
+    // Defensivo (incidente 16/07): resposta parcial/malformada da API não pode
+    // derrubar a renderização — por_tipo ausente trata como carregando.
+    if (!dn?.por_tipo) return null
     const tipos = TIPO_ORDER.filter((t) => (dn.por_tipo[t]?.valor_total || 0) > 0)
     return {
       labels: tipos.map((t) => TIPO_LABEL[t]),
       datasets: [{
-        data: tipos.map((t) => dn.por_tipo[t].valor_total),
+        data: tipos.map((t) => dn.por_tipo[t]?.valor_total || 0),
         backgroundColor: tipos.map((_, i) => BRAND_CHART_COLORS[i % BRAND_CHART_COLORS.length]),
         borderWidth: 0,
       }],
@@ -114,8 +116,8 @@ function DadosNotas({ data }) {
   }, [dn])
 
   const [sub, setSub] = useState('geral')
-  if (!dn) return <Loading />
-  const vg = dn.visao_geral
+  if (!dn?.por_tipo) return <Loading />
+  const vg = dn.visao_geral || {}
 
   return (
     <div className="space-y-5">

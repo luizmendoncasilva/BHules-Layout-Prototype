@@ -1,10 +1,26 @@
 import { useState, useMemo } from 'react'
-import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, HelpCircle, BookOpen, Pencil, DollarSign, TrendingUp, ArrowRight, Scale } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, HelpCircle, BookOpen, Pencil, DollarSign, TrendingUp, ArrowRight, Scale, RotateCcw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Badge, Button, Tooltip, TooltipTrigger, TooltipContent, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@bhubai/bhub-design-system'
 import { api } from '../../api/client'
 import { useCompanies } from '../../hooks/useCompanies'
+import { useHasRole, ROLE_FISCAL_ADM } from '../../auth/roles'
 import CorrectionModal from './CorrectionModal'
+import { resumoAprendizado } from './aprendizado'
+import { FINALIDADE_LABELS, isRecipientNaoContribuinte } from '../../constants/finalidades'
+import RevokePrecedenteModal from '../precedentes/RevokePrecedenteModal'
+
+// Fonte que indica que a determinação veio de um precedente integrado revogável.
+const FONTE_PRECEDENTE = 'PRECEDENTE_INTEGRADO'
+
+// True se algum campo determinante do item veio de um precedente integrado.
+function itemUsaPrecedente(s) {
+  return (
+    s?.finalidade_fonte === FONTE_PRECEDENTE ||
+    s?.cfop_entrada_fonte === FONTE_PRECEDENTE ||
+    s?.cst_icms_entrada_fonte === FONTE_PRECEDENTE
+  )
+}
 
 const confiancaColors = {
   ALTO: 'bg-success-subtle text-success-text border-success-border',
@@ -37,6 +53,7 @@ const fonteColors = {
   CADASTRO_PRODUTO: 'bg-coral-subtle text-coral-bold border-coral-bold/30',
   CFOP_EMITENTE: 'bg-dojo-steel-subtle text-dojo-steel-bold border-dojo-steel-bold/30',
   TIPO_ITEM: 'bg-muted text-muted-foreground border-border',
+  PRECEDENTE_INTEGRADO: 'bg-warning-subtle text-warning-text border-warning-border',
 }
 
 // CFOP descriptions (most common entrada CFOPs)
@@ -232,6 +249,7 @@ const fonteLabels = {
   CADASTRO_PRODUTO: 'Cadastro',
   CFOP_EMITENTE: 'CFOP Emit.',
   TIPO_ITEM: 'Tipo Item',
+  PRECEDENTE_INTEGRADO: 'Precedente',
 }
 
 function formatBRL(val) {
@@ -379,15 +397,16 @@ function DeParaRow({ campo, emitente, entrada, divergente, descEmitente, descEnt
 // Convertidas para rem (base 16px) para acompanhar a escala tipográfica do DS.
 const GRID_COLS = 'grid-cols-[1.25rem_1.75rem_1fr_4.75rem_5.25rem_3.125rem_2.625rem_3.625rem_5.625rem_2.5rem_5rem]'
 
-function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
+function SugestaoRow({ s, index, onFeedback, feedbackStatus, canRevogarPrecedente, onRevogarPrecedente, jaEnviada = false, canCorrigirAprendizado = false, onCorrigirAprendizado }) {
   const [expanded, setExpanded] = useState(false)
+  const showRevogar = canRevogarPrecedente && itemUsaPrecedente(s)
 
   // Check divergences per field
   const divFields = new Set((s.divergencias || []).map(d => d.campo))
 
   return (
     <div className={`border-b border-border last:border-0 ${
-      feedbackStatus === 'confirmed' ? 'bg-success-subtle/30' : feedbackStatus === 'corrected' ? 'bg-warning-subtle/30' : ''
+      feedbackStatus === 'confirmed' ? 'bg-success-subtle/30' : (feedbackStatus === 'corrected' || feedbackStatus === 'aprendizado') ? 'bg-warning-subtle/30' : ''
     }`}>
       <div
         className={`grid ${GRID_COLS} items-center px-3 py-2.5 gap-1 cursor-pointer hover:bg-accent/50`}
@@ -397,12 +416,22 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
         <span className="text-xs text-muted-foreground">#{s.num_item}</span>
         <span className="text-sm font-medium truncate pr-1" title={s.descricao}>{s.descricao || `Item ${s.num_item}`}</span>
         <span className="text-xs font-mono text-muted-foreground truncate">{s.ncm}</span>
-        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary text-center truncate">{s.finalidade}</span>
+        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary text-center truncate" title={FINALIDADE_LABELS[s.finalidade] || s.finalidade}>{FINALIDADE_LABELS[s.finalidade] || s.finalidade}</span>
         <span className="text-xs font-mono text-center">{s.cfop_entrada || '--'}</span>
         <span className="text-xs font-mono text-center">{s.cst_icms_entrada || '--'}</span>
         <span className="text-xs font-mono text-muted-foreground text-center">{s.cst_pis_entrada || '--'}/{s.cst_cofins_entrada || '--'}</span>
         <div className="flex justify-center"><ConfidenceBadge nivel={s.nivel_confianca} valor={s.confianca_geral} /></div>
         <div className="flex justify-center">
+          {s.categoria_erro_grave && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className="px-1 py-0.5 text-xs font-semibold gap-0.5 bg-destructive-subtle text-destructive-text">
+                  <AlertTriangle className="w-3 h-3" /> EG
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Erro Grave de CFOP: {s.categoria_erro_grave}</TooltipContent>
+            </Tooltip>
+          )}
           {s.divergencias?.length > 0 && (
             <span className="flex items-center gap-0.5 text-xs text-warning-text">
               <AlertTriangle className="w-3 h-3" /> {s.divergencias.length}
@@ -439,7 +468,7 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <DeParaRow campo="Finalidade" emitente="--" entrada={s.finalidade} divergente={false} />
+                  <DeParaRow campo="Finalidade" emitente="--" entrada={FINALIDADE_LABELS[s.finalidade] || s.finalidade} divergente={false} />
                   <DeParaRow campo="CFOP" emitente={s.cfop_emitente || '--'} entrada={s.cfop_entrada} divergente={divFields.has('cfop')} descEmitente={cfopDescricoes[s.cfop_emitente]} descEntrada={cfopDescricoes[s.cfop_entrada]} />
                   <DeParaRow campo="CST ICMS" emitente={s.cst_icms_emitente} entrada={s.cst_icms_entrada} divergente={divFields.has('cst_icms')} descEmitente={cstIcmsDescricoes[s.cst_icms_emitente]} descEntrada={cstIcmsDescricoes[s.cst_icms_entrada]} />
                   <DeParaRow campo="CST PIS" emitente={s.cst_pis_emitente} entrada={s.cst_pis_entrada} divergente={divFields.has('cst_pis')} descEmitente={cstPisCofinsDescricoes[s.cst_pis_emitente]} descEntrada={cstPisCofinsDescricoes[s.cst_pis_entrada]} />
@@ -503,6 +532,21 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
               </div>
             )}
 
+            {/* Trava de Erros Graves de CFOP (auditoria pós-decisão) */}
+            {s.categoria_erro_grave && (
+              <div className="text-xs bg-destructive-subtle border border-destructive-border px-3 py-2 rounded-lg flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-destructive-text mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-semibold text-destructive-text">Erro Grave de CFOP:</span>{' '}
+                  <span className="text-destructive-text">{s.categoria_erro_grave}</span>
+                  <p className="text-xs text-destructive-text/80 mt-0.5">
+                    Par (CFOP emitente {s.cfop_emitente || '--'} → entrada {s.cfop_entrada || '--'}) está na
+                    tabela de Erros Graves — curadoria fiscal 06/07/2026. Revisão humana obrigatória.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Divergences */}
             {s.divergencias?.length > 0 && (
               <div className="space-y-1.5">
@@ -523,10 +567,34 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
                 }`}>
                   {feedbackStatus === 'confirmed' ? (
                     <><CheckCircle2 className="w-3.5 h-3.5" /> Confirmado</>
+                  ) : feedbackStatus === 'aprendizado' ? (
+                    <><Pencil className="w-3.5 h-3.5" /> Aprendizado corrigido</>
                   ) : (
                     <><Pencil className="w-3.5 h-3.5" /> Corrigido</>
                   )}
                 </Badge>
+              ) : jaEnviada ? (
+                /* Nota já enviada ao Onvio (PQC-10, ex-T56): Confirmar/Corrigir dariam 409.
+                   Só o aprendizado é corrigível, e só por fiscal-adms. */
+                canCorrigirAprendizado ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={(e) => { e.stopPropagation(); onCorrigirAprendizado?.(s) }}
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-card text-warning-text border-warning-border hover:bg-warning-subtle"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Corrigir aprendizado
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      Nota já enviada ao Onvio: corrige só o que o motor aprendeu com este item (precedente e tratamento). Não altera a nota nem reenvia à Domínio.
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Nota já enviada ao Onvio — read-only. Corrigir o aprendizado exige o papel fiscal-adms.</span>
+                )
               ) : (
                 <>
                   <Button
@@ -545,6 +613,22 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
                   </Button>
                 </>
               )}
+              {showRevogar && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={(e) => { e.stopPropagation(); onRevogarPrecedente?.(s) }}
+                      size="sm"
+                      className="gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-warning-subtle text-warning-text border border-warning-border hover:bg-warning-subtle hover:opacity-80 ml-auto"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Revogar precedente
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    Esta determinação veio de um precedente integrado. Revogá-lo reenfileira as notas que o usaram para reprocesso.
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           </div>
         )}
@@ -552,11 +636,36 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus }) {
   )
 }
 
-export default function EscrituracaoTab({ data, invoice }) {
+export default function EscrituracaoTab({ data, invoice, jaEnviada = false }) {
   const queryClient = useQueryClient()
   const [feedbackSent, setFeedbackSent] = useState({})
   const [correctionItem, setCorrectionItem] = useState(null)
+  // Item aberto em "Corrigir aprendizado" (nota enviada) e o resultado/erro da última chamada.
+  const [aprendizadoItem, setAprendizadoItem] = useState(null)
+  const [aprendizadoMsg, setAprendizadoMsg] = useState(null)
+  const [revokeTarget, setRevokeTarget] = useState(null)
+  const isFiscalAdm = useHasRole(ROLE_FISCAL_ADM)
   const { data: companies = [] } = useCompanies()
+
+  // Só fiscal-adms pode revogar, e só se a nota tiver a chave (company + emitente).
+  const canRevogarPrecedente = isFiscalAdm && !!invoice?.company_id && !!invoice?.emit_cnpj
+
+  const handleRevogarPrecedente = (s) => {
+    if (!canRevogarPrecedente) return
+    setRevokeTarget({
+      companyId: invoice.company_id,
+      emitenteCnpj: invoice.emit_cnpj,
+      ncm: s.ncm,
+    })
+  }
+
+  const handleRevoked = () => {
+    setRevokeTarget(null)
+    // Reprocesso enfileirado: a aba atual fica desatualizada — refetch.
+    queryClient.invalidateQueries({ queryKey: ['escrituracao', invoice?.id] })
+    queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    queryClient.invalidateQueries({ queryKey: ['statusCounts'] })
+  }
 
   const company = useMemo(() => {
     if (!invoice?.company_id) return null
@@ -598,6 +707,23 @@ export default function EscrituracaoTab({ data, invoice }) {
     setCorrectionItem(null)
   }
 
+  // Nota enviada: corrige só o aprendizado daquele item (PQC-10). A nota, o
+  // status e o resultado ficam iguais; o erro aparece na aba, não só no console.
+  const handleCorrigirAprendizado = async (itemId, correcoes, motivo) => {
+    try {
+      const res = await api.corrigirAprendizado(data.invoice_id, [{ invoice_item_id: itemId, correcoes }], motivo)
+      setFeedbackSent(prev => ({ ...prev, [itemId]: 'aprendizado' }))
+      setAprendizadoMsg({ type: 'success', linhas: resumoAprendizado(res, sugestoes) })
+      setAprendizadoItem(null)
+      queryClient.invalidateQueries({ queryKey: ['invoice', invoice?.id] })
+      queryClient.invalidateQueries({ queryKey: ['invoiceAuditEvents', invoice?.id] })
+    } catch (e) {
+      console.error('Learning correction error:', e)
+      setAprendizadoItem(null)
+      setAprendizadoMsg({ type: 'error', linhas: [`Erro ao corrigir aprendizado: ${e.message}`] })
+    }
+  }
+
   return (
     // max-h calculado por viewport: o container pai (drawer/detail view) não
     // garante hoje um layout flex com altura definida até aqui, então manter
@@ -622,6 +748,28 @@ export default function EscrituracaoTab({ data, invoice }) {
           <span>{sugestoes?.length || 0} itens</span>
         </div>
       </div>
+
+      {/* Corrigir aprendizado: resultado por item ou erro (nota enviada) */}
+      {aprendizadoMsg && (
+        <div className={`rounded-lg p-3 text-xs flex items-start gap-2 ${
+          aprendizadoMsg.type === 'success' ? 'bg-success-subtle border border-success-border text-success-text' : 'bg-destructive-subtle border border-destructive-border text-destructive-text'
+        }`}>
+          <div className="flex-1 space-y-0.5">
+            {aprendizadoMsg.type === 'success' && (
+              <div className="font-medium">Aprendizado corrigido. A nota não foi alterada nem reenviada à Domínio.</div>
+            )}
+            {aprendizadoMsg.linhas.map((l, i) => <div key={i}>{l}</div>)}
+          </div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setAprendizadoMsg(null)}
+            className="h-auto p-0 text-xs text-current underline hover:bg-transparent"
+          >
+            fechar
+          </Button>
+        </div>
+      )}
 
       {/* Errors */}
       {erros?.length > 0 && (
@@ -698,6 +846,11 @@ export default function EscrituracaoTab({ data, invoice }) {
             index={i}
             onFeedback={handleFeedback}
             feedbackStatus={feedbackSent[s.invoice_item_id]}
+            canRevogarPrecedente={canRevogarPrecedente}
+            onRevogarPrecedente={handleRevogarPrecedente}
+            jaEnviada={jaEnviada}
+            canCorrigirAprendizado={isFiscalAdm}
+            onCorrigirAprendizado={setAprendizadoItem}
           />
         ))}
       </div>
@@ -709,8 +862,28 @@ export default function EscrituracaoTab({ data, invoice }) {
           onClose={() => setCorrectionItem(null)}
           onSubmit={handleCorrection}
           regimeTributario={perfil?.regime_tributario || company?.regime_tributario}
+          naoContribuinte={isRecipientNaoContribuinte(company, invoice)}
         />
       )}
+
+      {/* Corrigir aprendizado (nota enviada): mesmo modal, modo="aprendizado" */}
+      {aprendizadoItem && (
+        <CorrectionModal
+          item={aprendizadoItem}
+          modo="aprendizado"
+          onClose={() => setAprendizadoItem(null)}
+          onSubmit={handleCorrigirAprendizado}
+          regimeTributario={perfil?.regime_tributario || company?.regime_tributario}
+          naoContribuinte={isRecipientNaoContribuinte(company, invoice)}
+        />
+      )}
+
+      {/* Revoke Precedente Modal */}
+      <RevokePrecedenteModal
+        target={revokeTarget}
+        onClose={() => setRevokeTarget(null)}
+        onRevoked={handleRevoked}
+      />
 
       {/* Total footer */}
       {resumo && (

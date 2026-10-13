@@ -18,6 +18,24 @@ async function _authHeader() {
 }
 
 export async function fetchWithAuth(url, options = {}) {
+  // Protótipo: chamadas diretas (ex.: tributacaoService) também passam pelos
+  // mocks, devolvendo um Response sintético com o JSON do fixture.
+  if (MOCK_ENABLED && typeof url === 'string' && url.startsWith(API_BASE)) {
+    const { resolveMock } = await import('../mocks/registry')
+    await import('../mocks/index')
+    const path = url.slice(API_BASE.length)
+    const method = options.method || 'GET'
+    let data = resolveMock(path, method, options.body)
+    if (data === undefined) {
+      console.warn(`[mock] sem handler para ${method} ${path} — devolvendo resposta vazia`)
+      data = {}
+    }
+    data = await data
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
   const auth = await _authHeader()
   return fetch(url, {
     ...options,
@@ -33,7 +51,7 @@ async function request(path, options = {}) {
     const { resolveMock } = await import('../mocks/registry')
     await import('../mocks/index')
     const method = options.method || 'GET'
-    const mocked = resolveMock(path, method)
+    const mocked = resolveMock(path, method, options.body)
     if (mocked !== undefined) {
       return mocked
     }
@@ -80,8 +98,34 @@ export const api = {
       body: JSON.stringify({ cnpj_confirm: cnpjConfirm }),
     }),
 
+  // Revogação lógica de precedente integrado (preview não-mutante + POST auditado)
+  getRevokePrecedentePreview: (companyId, emitenteCnpj, ncm) => {
+    const params = new URLSearchParams({ emitente_cnpj: emitenteCnpj, ncm })
+    return request(`/companies/${companyId}/precedentes/revoke-preview?${params}`)
+  },
+
+  revogarPrecedente: (companyId, { emitenteCnpj, ncm, motivo }) =>
+    request(`/companies/${companyId}/precedentes/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ emitente_cnpj: emitenteCnpj, ncm, motivo }),
+    }),
+
+  // Revogação por NOTA e em LOTE (PREC-02): o motor resolve as chaves que as
+  // notas usaram. Rota global — o lote da listagem mistura empresas.
+  getRevokePrecedentesPorNotasPreview: (invoiceIds) => {
+    const params = new URLSearchParams()
+    invoiceIds.forEach((id) => params.append('invoice_ids', id))
+    return request(`/precedentes/revoke-by-invoices/preview?${params}`)
+  },
+
+  revogarPrecedentesPorNotas: (invoiceIds, motivo) =>
+    request('/precedentes/revoke-by-invoices', {
+      method: 'POST',
+      body: JSON.stringify({ invoice_ids: invoiceIds, motivo }),
+    }),
+
   // Invoices
-  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType, regimeTributario } = {}) => {
+  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType, regimeTributario, numDoc, emitNome, destNome, codSit, erroGrave, vlDoc, integradoApi, onlyIncoming = false } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -110,12 +154,43 @@ export const api = {
     // Real) — filtra pela empresa dona da nota (company_id), não pelo CNPJ
     // emitente/destinatário bruto do documento (pedido da Eliz).
     if (regimeTributario) params.set('regime_tributario', regimeTributario)
+    // Filtros de coluna do painel (PR-A): consultam o dataset inteiro no
+    // backend, não só a página carregada. Mapa coluna→param em ListView.jsx.
+    if (numDoc) params.set('num_doc', numDoc)
+    if (emitNome) params.set('emit_nome', emitNome)
+    if (destNome) params.set('dest_nome', destNome)
+    if (codSit) params.set('cod_sit', codSit)
+    if (erroGrave) params.set('erro_grave', erroGrave)
+    if (vlDoc) params.set('vl_doc', vlDoc)
+    if (integradoApi) params.set('integrado_api', integradoApi)
+    // No oficial only_incoming=true é o default; no protótipo a segregação
+    // usa os dois eixos (ind_emit/ind_oper), então só vai quando pedido.
+    if (onlyIncoming) params.set('only_incoming', 'true')
+    // Gate de habilitação (auditoria 16/07): getInvoices é o PAINEL DE ANÁLISE
+    // — o backend esconde notas de empresas não habilitadas à esteira da aba.
+    params.set('painel', 'true')
     return request(`/invoices?${params}`)
   },
 
   // Notas Integradas (dual-write, não-55-entrada) — NÃO força only_incoming;
   // respeita os filtros cod_mod/ind_emit da aba. ind_emit = direção sob a ótica
   // do cliente (0=saída/própria, 1=entrada/terceiro). Read-only.
+  // Agrupamento de NFS-e PRESTADAS por código de serviço (read-only).
+  // A chave é canônica e vem derivada do backend — "17.06" e "1706" são o
+  // MESMO grupo. O frontend nunca faz split('.') em código de serviço.
+  getNfsePrestadosGrupos: ({ companyIds, startDate, endDate, tipo, sinal, orderBy, page = 1, size = 50 } = {}) => {
+    const params = new URLSearchParams()
+    if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    if (tipo) params.set('tipo', tipo)
+    if (sinal) params.set('sinal', sinal)
+    if (orderBy) params.set('order_by', orderBy)
+    params.set('page', page)
+    params.set('page_size', size)
+    return request(`/invoices/nfse-prestados/grupos?${params}`)
+  },
+
   getIntegratedInvoices: ({ companyIds, companyId, page = 1, size = 50, search, codMod, indEmit, startDate, endDate } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
@@ -192,6 +267,17 @@ export const api = {
     return request(`/audit/events?${params.toString()}`)
   },
 
+  // Correção de campo em um item (ex.: edição em lote de serviços) — grava
+  // o diff campo/valor_antigo/valor_novo na auditoria, não só quem editou.
+  submitItemCorrection: ({ invoiceId, itemId, campo, valorAntigo, valorNovo, analista }) => {
+    const params = new URLSearchParams()
+    params.set('campo', campo)
+    params.set('valor_antigo', valorAntigo ?? '')
+    params.set('valor_novo', valorNovo ?? '')
+    if (analista) params.set('analista', analista)
+    return request(`/invoices/${invoiceId}/items/${itemId}/override?${params.toString()}`, { method: 'POST' })
+  },
+
   getStatusReasons: (id) => request(`/invoices/${id}/status-reasons`),
 
   getClassificationHistory: ({ companyIds, startDate, endDate, granularity } = {}) => {
@@ -217,12 +303,20 @@ export const api = {
     return request(`/invoices/operations-dashboard?${params}`)
   },
 
+  // dataPagamento: string 'YYYY-MM-DD' seta; '' ou null limpa explicitamente
+  // (body { data_pagamento: null } — nunca omitido, senão o backend rejeita
+  // com 422 em vez de limpar silenciosamente).
   updateDataPagamento: (id, dataPagamento) =>
-    request(`/invoices/${id}/data-pagamento?data_pagamento=${dataPagamento}`, { method: 'PATCH' }),
+    request(`/invoices/${id}/data-pagamento`, {
+      method: 'PATCH',
+      body: JSON.stringify({ data_pagamento: dataPagamento || null }),
+    }),
 
   approveInvoice: (id) =>
     request(`/invoices/${id}/approve`, { method: 'PUT' }),
 
+  // Mantido sem chamador na UI (o botão do detalhe usa getDocumentoOriginal):
+  // a rota /xml é consumida pelo bhub-ledger como claim-check.
   downloadInvoiceXml: (id) =>
     fetchWithAuth(`${API_BASE}/invoices/${id}/xml`).then(async r => {
       if (!r.ok) {
@@ -233,6 +327,23 @@ export const api = {
         throw new Error(detail)
       }
       return r.blob()
+    }),
+
+  // XML ORIGINAL (como veio do prestador/fornecedor), de qualquer fonte de
+  // captura — JETTAX/UNECONT/RESTATE/IntegradorNF e NFS-e (chave sintética).
+  // O backend devolve a URL presigned (1h), nunca o binário: quem baixa é o
+  // browser, direto do S3 do upstream.
+  // Resposta: { url, expires_in, content_type, source }
+  getDocumentoOriginal: (id) =>
+    fetchWithAuth(`${API_BASE}/invoices/${id}/documento-original`).then(async r => {
+      if (!r.ok) {
+        // O `detail` do backend já é acionável (nomeia a fonte de captura que
+        // não guardou o XML, ou diz que faltam dados para localizar a nota).
+        let detail = `Falha ao obter o XML original (HTTP ${r.status})`
+        try { const j = await r.json(); if (j?.detail) detail = j.detail } catch { /* corpo não-JSON */ }
+        throw new Error(detail)
+      }
+      return r.json()
     }),
 
   // Escrituração (new engine)
@@ -261,7 +372,16 @@ export const api = {
       body: JSON.stringify(feedbacks),
     }),
 
-  // Ação humana explícita de "Confirmar e enviar ao Onvio" — única via que
+  // "Corrigir aprendizado" em nota JÁ enviada ao Onvio (PQC-10, Q2 Célula 25/09):
+  // muda só o que o motor aprende (precedente revogado, tratamento auditado,
+  // ground truth). Não altera a nota nem reenvia. fiscal-adms; 409 se não enviada.
+  corrigirAprendizado: (invoiceId, itens, motivo) =>
+    request(`/escrituracao/${invoiceId}/corrigir-aprendizado`, {
+      method: 'POST',
+      body: JSON.stringify({ itens, motivo }),
+    }),
+
+  // Ação humana explícita de "Confirmar e Escriturar" — única via que
   // publica o evento analysis_reviewed. Salvar feedback (acima) nunca envia.
   confirmarEnvioOnvio: (invoiceId, feedbacks) =>
     request(`/escrituracao/${invoiceId}/confirmar-envio`, {
@@ -616,7 +736,7 @@ export const api = {
   // Escrituração Excel Export — caminho assíncrono (mata o 29s do API Gateway
   // e o limite de 10MB do payload). Endpoint POST cria job, GET pollla status,
   // download via URL assinada S3.
-  createExportXlsxJob: ({ companyId, startDate, endDate, invoiceIds, tipoNf } = {}) =>
+  createExportXlsxJob: ({ companyId, startDate, endDate, invoiceIds, tipoNf, direcao, layout } = {}) =>
     request('/escrituracao/export/xlsx/job', {
       method: 'POST',
       body: JSON.stringify({
@@ -625,6 +745,12 @@ export const api = {
         end_date: endDate,
         invoice_ids: invoiceIds && invoiceIds.length > 0 ? invoiceIds.join(',') : null,
         tipo_nf: tipoNf || null,
+        // R-EXPORT: emitidas|recebidas|ambas — null = layout legado (todos
+        // os tipos numa base só, sem segregação por direção).
+        direcao: direcao || null,
+        // UNE: 'unecont' = modelo Unecont de NFS-e tomados (2 abas);
+        // null = layouts padrão.
+        layout: layout || null,
       }),
     }),
 
@@ -778,15 +904,42 @@ export const api = {
       body: JSON.stringify({ resolucao, justificativa, analista, override_aprovador }),
     }),
 
-  // Classification Overrides
-  getClassificationOverrides: (invoiceId) =>
-    request(`/invoices/${invoiceId}/classification-overrides`),
+  // Fila DIFAL-SN (RN-25, DV5-01) — keyset por `cursor`/`next_cursor`, sem total.
+  // O autor dos vereditos vem do JWT no backend; a UI nunca o envia.
+  getDifalSnRevisao: ({ status, uf, competencia, companyId, limit = 50, cursor } = {}) => {
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    if (uf) params.set('uf', uf)
+    if (competencia) params.set('competencia', competencia)
+    if (companyId) params.set('company_id', companyId)
+    params.set('limit', limit)
+    if (cursor) params.set('cursor', cursor)
+    return request(`/difal-sn/revisao?${params}`)
+  },
 
-  saveClassificationOverrides: (invoiceId, items, motivo) =>
-    request(`/invoices/${invoiceId}/classification-overrides`, {
-      method: 'PUT',
-      body: JSON.stringify({ invoice_id: invoiceId, items, motivo }),
+  validarDifalSnItem: (itemResultId, { estado, valor_conferido, motivo }) =>
+    request(`/difal-sn/item/${itemResultId}/validacao`, {
+      method: 'POST',
+      body: JSON.stringify({ estado, valor_conferido, motivo }),
     }),
+
+  validarDifalSnLote: ({ itens, usar_valor_calculado = false }) =>
+    request('/difal-sn/revisao/lote', {
+      method: 'POST',
+      body: JSON.stringify({ itens, usar_valor_calculado }),
+    }),
+
+  getDifalSnInvoice: (invoiceId) => request(`/difal-sn/invoice/${invoiceId}`),
+
+  // DIFAL-SN — Regras do Rule Pack com o gate de ativação (DV5-11, só leitura)
+  getDifalSnRegras: ({ uf, instituto, estado } = {}) => {
+    const params = new URLSearchParams()
+    if (uf) params.set('uf', uf)
+    if (instituto) params.set('instituto', instituto)
+    if (estado) params.set('estado', estado)
+    const qs = params.toString()
+    return request(`/difal-sn/regras${qs ? `?${qs}` : ''}`)
+  },
 
   // NFS-e Validation
   runNfseValidation: (invoiceId, force = false) => {
@@ -843,6 +996,36 @@ export const api = {
 
   getNfseFeedbackStats: () => request('/invoices/nfse-feedback/stats'),
 
+  // Precedentes NFS-e v2 — lista + revogação lógica (preview não-mutante + POST auditado)
+  nfsePrecedentesList: (companyId, prestadorCnpj) => {
+    const params = new URLSearchParams({ company_id: companyId })
+    if (prestadorCnpj) params.set('prestador_cnpj', prestadorCnpj)
+    return request(`/nfse/precedentes?${params}`)
+  },
+
+  nfsePrecedenteRevogarPreview: (precedenteId) =>
+    request(`/nfse/precedentes/${precedenteId}/revogar-preview`),
+
+  nfsePrecedenteRevogar: (precedenteId, { motivo, autor }) =>
+    request(`/nfse/precedentes/${precedenteId}/revogar`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo, autor }),
+    }),
+
+  // Conferência NFS-e — worklist de falso-negativo direcional + amostra CONFORME
+  getNfseConferencia: (companyId, {
+    startDate, endDate, page = 1, size = 50, sampleSize = 10, includeIntegradas = false,
+  } = {}) => {
+    const params = new URLSearchParams({ company_id: companyId })
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    params.set('page', page)
+    params.set('size', size)
+    params.set('sample_size', sampleSize)
+    if (includeIntegradas) params.set('include_integradas', 'true')
+    return request(`/nfse/conferencia?${params}`)
+  },
+
   // Alerts
   getRecentAlerts: (limit = 50) => request(`/alerts/recent?limit=${limit}`),
   getAlertStats: () => request('/alerts/stats'),
@@ -865,6 +1048,21 @@ export const api = {
     params.set('page', page)
     params.set('page_size', pageSize)
     return request(`/onboarding/companies?${params}`)
+  },
+
+  exportOnboardedCompanies: ({ search, regime, ativo } = {}) => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (regime) params.set('regime', regime)
+    if (ativo !== undefined && ativo !== null) params.set('ativo', ativo)
+    return fetchWithAuth(`${API_BASE}/onboarding/companies/export?${params}`).then(async r => {
+      if (!r.ok) {
+        let detail = `Falha ao exportar Excel (HTTP ${r.status})`
+        try { const j = await r.json(); if (j?.detail) detail = j.detail } catch { /* corpo não-JSON */ }
+        throw new Error(detail)
+      }
+      return r.blob()
+    })
   },
 
   syncCertificates: () =>

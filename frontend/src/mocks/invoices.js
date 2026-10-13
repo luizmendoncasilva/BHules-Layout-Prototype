@@ -1,5 +1,6 @@
 import { mockRoute, paginate, paramsOf } from './registry'
 import { MOCK_COMPANIES } from './companies'
+import { addAuditEvent, EXTRA_AUDIT_EVENTS } from './audit'
 
 // Fixture de notas fiscais de entrada (NF-e/NFC-e) usado por ListView,
 // DetailView, DanfeTab, ClassificationTab, AuditTab e os dashboards de
@@ -26,7 +27,9 @@ function pad(n, len) {
 }
 
 function isoDate(daysAgo) {
-  const d = new Date('2026-07-31T00:00:00')
+  // Âncora = hoje: o filtro padrão do painel passou a ser o mês corrente
+  // (getMesCorrenteRange, vindo do oficial), então os dados acompanham a data.
+  const d = new Date(new Date().toDateString())
   d.setDate(d.getDate() - daysAgo)
   return d.toISOString().slice(0, 10)
 }
@@ -398,7 +401,8 @@ mockRoute(/^\/invoices\/(\d+)\/audit-events$/, 'GET', (_path, match) => {
               : null,
     })
   }
-  return events.reverse()
+  const extras = EXTRA_AUDIT_EVENTS.filter((e) => e.invoice_id === invoiceId)
+  return [...extras, ...events.reverse()]
 })
 
 mockRoute(/^\/invoices\/(\d+)\/status-reasons$/, 'GET', (_path, match) => {
@@ -426,6 +430,27 @@ mockRoute(/^\/invoices\/(\d+)\/nfse-feedback$/, 'POST', () => ({ ok: true }))
 
 mockRoute(/^\/invoices\/(\d+)\/classification-overrides$/, 'GET', () => [])
 mockRoute(/^\/invoices\/(\d+)\/classification-overrides$/, 'PUT', () => ({ ok: true }))
+
+// Correção de campo em uma linha/item (ex.: edição em lote de serviços) —
+// registra o diff campo/valor_antigo/valor_novo na auditoria em vez de só
+// "quem mexeu", pra dar resposta ao pedido da Eliz de rastrear o quê mudou.
+mockRoute(/^\/invoices\/(\d+)\/items\/([^/?]+)\/override$/, 'POST', (path, match) => {
+  const invoiceId = Number(match[1])
+  const itemId = match[2]
+  const params = paramsOf(path)
+  const campo = params.get('campo')
+  const valorAntigo = params.get('valor_antigo') || null
+  const valorNovo = params.get('valor_novo') || null
+  const analista = params.get('analista') || 'analista-prototipo@bhub.ai'
+  addAuditEvent({
+    event_type: 'invoice.override.submitted',
+    actor: analista,
+    actor_type: 'analyst',
+    invoice_id: invoiceId,
+    payload: { invoice_id: invoiceId, item_id: itemId, changes: [{ campo, valor_antigo: valorAntigo, valor_novo: valorNovo }] },
+  })
+  return { ok: true }
+})
 
 mockRoute(/^\/invoices\/(\d+)\/data-pagamento$/, 'PATCH', () => ({ ok: true }))
 mockRoute(/^\/invoices\/(\d+)\/approve$/, 'PUT', () => ({ ok: true }))

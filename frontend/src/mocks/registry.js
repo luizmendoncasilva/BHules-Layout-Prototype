@@ -8,18 +8,18 @@ export function mockRoute(pattern, method, handler) {
   handlers.push({ pattern, method: method.toUpperCase(), handler })
 }
 
-export function resolveMock(path, method = 'GET') {
+export function resolveMock(path, method = 'GET', body) {
   const [pathname] = path.split('?')
   const m = method.toUpperCase()
   for (const h of handlers) {
     if (h.method !== m) continue
     if (h.pattern instanceof RegExp) {
       const match = pathname.match(h.pattern)
-      if (match) return h.handler(path, match)
+      if (match) return h.handler(path, match, body)
     } else if (typeof h.pattern === 'function') {
-      if (h.pattern(pathname)) return h.handler(path)
+      if (h.pattern(pathname)) return h.handler(path, undefined, body)
     } else if (h.pattern === pathname) {
-      return h.handler(path)
+      return h.handler(path, undefined, body)
     }
   }
   return undefined

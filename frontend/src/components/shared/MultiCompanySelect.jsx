@@ -12,12 +12,14 @@ import {
   CommandItem,
   CommandEmpty,
 } from '@bhubai/bhub-design-system'
+import { filtrarEmpresas } from '../../utils/matchEmpresa'
 
 /**
  * Seletor de empresas MÚLTIPLO com busca embutida.
  *
  * - Permite marcar 2, 3 ou mais empresas (checkbox por linha).
- * - Campo de busca dentro do dropdown filtra por razão social / CNPJ.
+ * - Campo de busca dentro do dropdown filtra por razão social, nome
+ *   fantasia ou CNPJ (com ou sem máscara).
  * - Fecha ao clicar fora. Estilizado para header escuro (Bushido Night).
  *
  * Props:
@@ -30,13 +32,8 @@ export default function MultiCompanySelect({ companies = [], selectedIds = [], o
   const [busca, setBusca] = useState('')
 
   const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    if (!q) return companies
-    return companies.filter(
-      (c) =>
-        c.razao_social?.toLowerCase().includes(q) ||
-        (c.cnpj || '').toLowerCase().includes(q),
-    )
+    // Razão social, nome fantasia ou CNPJ com/sem máscara (GL-C4).
+    return filtrarEmpresas(companies, busca)
   }, [companies, busca])
 
   const label = useMemo(() => {

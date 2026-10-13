@@ -1,11 +1,46 @@
 import { useState } from 'react'
-import { CheckCircle, AlertTriangle, XCircle, ThumbsUp, ThumbsDown, Send, Loader2, Check } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { CheckCircle, AlertTriangle, XCircle, ThumbsUp, ThumbsDown, Send, Loader2, Check, FileWarning, Scale, ChevronDown, ChevronRight } from 'lucide-react'
 import {
-  Button, Badge, Input, Textarea,
+  Button, Badge, Input, Label,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
+  Tooltip, TooltipTrigger, TooltipContent,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from '@bhubai/bhub-design-system'
 import { api } from '../../api/client'
+import { useHasRole, ROLE_FISCAL_ADM } from '../../auth/roles'
+import NfsePrecedentesPanel from '../precedentes/NfsePrecedentesPanel'
+import RevokeNfsePrecedenteModal from '../precedentes/RevokeNfsePrecedenteModal'
+import { chavesParaConfirmar } from './nfseFeedbackKeys'
+
+// Fonte que indica que a determinação de retenção veio do precedente NFS-e
+// v2 (mesmo rule_code usado pelo ground-truth legado — ver nfse_engine.py).
+const NFSE_PRECEDENTE_RULE_CODE = 'NFSE-GT-001'
+
+// Extrai o id do precedente aplicado da regra NFSE-GT-001. Preferência pelo
+// campo estruturado `precedente_id` (contrato do engine); o regex na
+// description (ex.: "IRRF: alíquota 1%→1,5% (precedente 42)") fica como
+// fallback para análises antigas serializadas sem o campo. Retorna null
+// quando a regra não está presente ou é o ground-truth legado por CNPJ, que
+// não tem precedente revogável.
+function extractPrecedenteId(analysis) {
+  const results = analysis?.results || []
+  for (const r of results) {
+    if (r.rule_code !== NFSE_PRECEDENTE_RULE_CODE) continue
+    if (r.precedente_id != null) return Number(r.precedente_id)
+    const m = /precedente\s+(\d+)/i.exec(r.description || '')
+    if (m) return Number(m[1])
+  }
+  return null
+}
+
+// Há ajuste NFSE-GT-001 na análise, com ou sem precedente revogável? Usado
+// para mostrar o badge informativo quando o ajuste veio do ground-truth
+// legado (sem id — nada a revogar no painel de precedentes).
+function hasGroundTruthAdjustment(analysis) {
+  return (analysis?.results || []).some((r) => r.rule_code === NFSE_PRECEDENTE_RULE_CODE)
+}
 
 function formatCurrency(val) {
   if (val == null || val === '' || val === '0' || val === 0) return 'R$ 0,00'
@@ -58,112 +93,411 @@ function getFeedbackTributo(tributo) {
   return map[tributo] || tributo
 }
 
-function CorrectionModal({ row, onClose, onSubmit }) {
-  const [aliquota, setAliquota] = useState('')
-  const [valor, setValor] = useState('')
-  const [base, setBase] = useState('')
-  const [comment, setComment] = useState('')
 
-  const handleSubmit = () => {
-    const correcoes = {}
-    if (aliquota !== '') correcoes.aliquota = parseFloat(aliquota)
-    if (valor !== '') correcoes.valor = parseFloat(valor)
-    if (base !== '') correcoes.base = parseFloat(base)
-    onSubmit({
-      tributo: getFeedbackTributo(row.tributo),
-      motor_acertou: false,
-      correcoes: Object.keys(correcoes).length > 0 ? correcoes : null,
-      comment: comment || null,
-    })
+// NFSC-02: badge por linha com o feedback já gravado para a chave do tributo.
+// PIS/COFINS/CSLL mostram o mesmo badge — gravam juntas em PCC.
+function FeedbackBadge({ feedback }) {
+  const corrigido = feedback.tipo === 'corrigido'
+  const v = feedback.valores || {}
+  const detalhes = [
+    v.base != null && `base ${v.base}`,
+    v.aliquota != null && `aliquota ${v.aliquota}%`,
+    v.valor != null && `valor ${v.valor}`,
+    v.retido != null && (v.retido ? 'retido' : 'nao retido'),
+    feedback.em && `em ${new Date(feedback.em).toLocaleString('pt-BR')}`,
+  ].filter(Boolean).join(' · ')
+  const badge = (
+    <Badge
+      variant="outline"
+      className={`ml-2 gap-1 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+        corrigido ? 'bg-warning-subtle text-warning-text border-warning-border' : 'bg-success-subtle text-success-text border-success-border'
+      }`}
+    >
+      {corrigido ? <AlertTriangle className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+      {corrigido ? 'corrigido' : 'confirmado'}
+    </Badge>
+  )
+  if (!detalhes) return badge
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent>{detalhes}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+// U2 — fundamentação legal dinâmica (Fase 3 não-gated): resumo_regras.
+// fundamentacoes é persistido pelo audit trail (chaveado por irrf/pcc/inss/
+// iss), MAS só no caminho de lote (enable_dynamic_legislation=True) — a
+// análise on-demand usada por esta aba (get_nfse_analysis) não a calcula.
+// Lemos de `analysis.fundamentacoes[tributo]` (mesmo nome/chaves do dict
+// persistido) para já vir funcionando no dia em que essa análise também
+// passar a expor o campo; até lá, undefined ⇒ fallback estático (sem
+// mudança de visual, conforme especificado).
+function fundamentacoesFor(analysis, tributoDisplay) {
+  const key = getFeedbackTributo(tributoDisplay).toLowerCase()
+  const list = analysis?.fundamentacoes?.[key]
+  return Array.isArray(list) && list.length > 0 ? list : null
+}
+
+function FundamentacaoExpander({ fundamentacoes }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!fundamentacoes?.length) return null
+  return (
+    <div className="mt-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+        className="h-auto p-0 gap-1 text-xs font-medium text-success-text hover:text-success-text hover:bg-transparent"
+      >
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <Scale className="w-3 h-3" /> Fundamentação ({fundamentacoes.length})
+      </Button>
+      {expanded && (
+        <div className="mt-1.5 bg-card rounded-lg border border-border divide-y divide-border max-w-md">
+          {fundamentacoes.map((f, i) => (
+            <div key={i} className="px-2.5 py-1.5">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="text-xs font-semibold text-foreground break-words">{f.norma}</span>
+                {f.dispositivo && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground font-mono whitespace-nowrap">
+                    {f.dispositivo}
+                  </span>
+                )}
+                {f.similarity != null && (
+                  <span className="text-[10px] text-muted-foreground">{(f.similarity * 100).toFixed(0)}% relev.</span>
+                )}
+              </div>
+              {f.texto && (
+                <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed break-words line-clamp-2">
+                  {f.texto}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Nota ingerida somente com o cabecalho (sem os campos de servico/valor) faz o
+// motor devolver uma analise "casca vazia" — sem classificacao nem valores.
+// Não é erro de rede, mas não ha nada de util pra mostrar na tabela.
+function isAnalysisEmpty(analysis) {
+  if (!analysis) return true
+  const cls = analysis.classification || {}
+  const vlq = analysis.valor_liquido || {}
+  const hasClassificacao = !!(cls.codigo_servico || cls.descricao_servico)
+  const hasValor = Number(vlq.valor_bruto || 0) > 0
+  return !hasClassificacao && !hasValor
+}
+
+function RetentionSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-20 bg-muted rounded-lg border border-border" />
+      <div className="border border-border rounded-lg overflow-hidden">
+        <div className="h-10 bg-muted border-b border-border" />
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-11 bg-card border-b border-border last:border-b-0" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function IncompleteAnalysisBanner() {
+  return (
+    <div className="flex items-start gap-3 bg-warning-subtle border border-warning-border rounded-lg p-4">
+      <FileWarning className="w-5 h-5 text-warning-text shrink-0 mt-0.5" />
+      <p className="text-sm text-warning-text">
+        Não foi possível montar a análise — dados de serviço incompletos nesta nota (ingestão parcial).
+        Valores disponíveis na aba <strong>Dados NFS-e</strong>.
+      </p>
+    </div>
+  )
+}
+
+// T21 (NFSC-04): mesmo padrão do CorrectionModal da NF-e (DetailView.jsx) —
+// N linhas num único modal, aqui uma por tributo. Um submit = N feedbacks,
+// só dos blocos que o analista alterou: linha intocada não é revisão (quem
+// encerra a revisão é "Confirmar Analise", que confirma o que não foi
+// corrigido).
+//
+// PCC-01: PIS/COFINS/CSLL são três linhas do bloco "PCC (PIS + COFINS +
+// CSLL)" com UM conjunto de campos. O feedback grava a chave PCC
+// (getFeedbackTributo): colunas *_pcc_humano do ground truth e o override
+// `pcc` do precedente v2, que não distinguem os três. Separar mexe no modelo
+// de nfse_ground_truth e nos precedentes: ADIADO por decisão de produto
+// (spec 2026-08-04-nfse-primeira-classe, Non-Goals).
+// SPEC_DEVIATION: as três linhas do PCC compartilham base/alíquota/valor/
+// retenção/comentário em vez de um conjunto de campos por linha.
+// Reason: três feedbacks com a chave PCC na mesma chamada sobrescreveriam as
+// mesmas colunas (o último vence) e o serializer/badge só conhecem PCC.
+const BLOCOS_CORRECAO = [
+  { key: 'IRRF', label: 'IRRF', tributos: ['IRRF'] },
+  { key: 'PCC', label: 'PCC (PIS + COFINS + CSLL)', tributos: ['PIS', 'COFINS', 'CSLL'] },
+  { key: 'INSS', label: 'INSS', tributos: ['INSS'] },
+  { key: 'ISS', label: 'ISS', tributos: ['ISS'] },
+]
+
+const CAMPOS_VAZIOS = { base: '', aliquota: '', valor: '', retido: '', comment: '' }
+
+// Campos preenchidos → feedback do bloco; nada preenchido → null (não envia).
+function buildFeedback(key, c) {
+  const correcoes = {}
+  if (c.base !== '') correcoes.base = parseFloat(c.base)
+  if (c.aliquota !== '') correcoes.aliquota = parseFloat(c.aliquota)
+  if (c.valor !== '') correcoes.valor = parseFloat(c.valor)
+  if (c.retido !== '') correcoes.retido = c.retido === 'true'
+  const temCorrecao = Object.keys(correcoes).length > 0
+  if (!temCorrecao && !c.comment) return null
+  return {
+    tributo: key,
+    motor_acertou: false,
+    correcoes: temCorrecao ? correcoes : null,
+    comment: c.comment || null,
   }
+}
+
+// Sentinela do Select "Retencao" (Radix não aceita SelectItem com value="").
+const RETIDO_MANTER = '__manter__'
+
+function CorrectionModal({ rows, onClose, onSubmit }) {
+  const [campos, setCampos] = useState(() =>
+    Object.fromEntries(BLOCOS_CORRECAO.map((b) => [b.key, { ...CAMPOS_VAZIOS }]))
+  )
+  const update = (key, field, value) =>
+    setCampos((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
+
+  const rowsPorTributo = Object.fromEntries(rows.map((r) => [r.tributo, r]))
+  const feedbacks = BLOCOS_CORRECAO.map((b) => buildFeedback(b.key, campos[b.key])).filter(Boolean)
 
   return (
-    <Sheet open={!!row} onOpenChange={(open) => { if (!open) onClose() }}>
-      <SheetContent side="right" className="p-0 gap-0 flex flex-col">
+    <Sheet open onOpenChange={(open) => { if (!open) onClose() }}>
+      <SheetContent side="right" className="w-full sm:max-w-3xl p-0 gap-0 flex flex-col">
         <SheetHeader className="border-b border-border">
-          <SheetTitle>Corrigir {row.tributo}</SheetTitle>
+          <SheetTitle>Corrigir Retencoes ({rows.length} tributos)</SheetTitle>
+          <SheetDescription>
+            Informe os valores corretos. Deixe em branco os campos que o motor acertou;
+            tributo sem alteracao nao gera feedback.
+          </SheetDescription>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-        <p className="text-sm text-muted-foreground mb-4">
-          Informe os valores corretos. Deixe em branco os campos que o motor acertou.
-        </p>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Base de Calculo (R$)</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={base}
-              onChange={(e) => setBase(e.target.value)}
-              placeholder={row.base != null ? String(row.base) : ''}
-              className="font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Aliquota (%)</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={aliquota}
-              onChange={(e) => setAliquota(e.target.value)}
-              placeholder={row.aliquota !== '-' ? row.aliquota.replace('%', '') : ''}
-              className="font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Valor Correto (R$)</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              placeholder={row.esperado != null ? String(Number(row.esperado).toFixed(2)) : ''}
-              className="font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Comentario (opcional)</label>
-            <Textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={2}
-              placeholder="Ex: Aliquota correta conforme LC 116 item 7.02"
-              className="resize-none"
-            />
-          </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {BLOCOS_CORRECAO.map((b) => {
+            const linhas = b.tributos.map((t) => rowsPorTributo[t]).filter(Boolean)
+            const c = campos[b.key]
+            const alterado = !!buildFeedback(b.key, c)
+            const feedback = linhas[0]?.feedback
+            const esperadoBloco = linhas.reduce((acc, r) => acc + Number(r.esperado || 0), 0)
+            return (
+              <div
+                key={b.key}
+                className={`border rounded-lg p-4 ${alterado ? 'border-info-border bg-info-subtle' : 'border-border'}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {b.label}
+                    {feedback && <FeedbackBadge feedback={feedback} />}
+                  </span>
+                  {alterado
+                    ? <span className="text-xs text-info-text font-medium">Sera enviado</span>
+                    : <span className="text-xs text-muted-foreground">Sem alteracao</span>}
+                </div>
+
+                {/* O que o motor calculou, uma linha por tributo do bloco */}
+                <div className="mb-3 border border-border rounded bg-card text-xs">
+                  <div className="grid grid-cols-6 gap-2 px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <span>Tributo</span>
+                    <span className="text-right">Base</span>
+                    <span className="text-right">Aliquota</span>
+                    <span className="text-right">Esperado</span>
+                    <span className="text-right">NFS-e</span>
+                    <span className="text-right">Status</span>
+                  </div>
+                  {linhas.map((r) => (
+                    <div key={r.tributo} className="grid grid-cols-6 gap-2 px-2 py-1 items-center">
+                      <span className="font-semibold text-foreground">{r.tributo}</span>
+                      <span className="font-mono text-muted-foreground text-right">{formatCurrency(r.base)}</span>
+                      <span className="font-mono text-muted-foreground text-right">{r.aliquota}</span>
+                      <span className="font-mono text-foreground text-right">{formatCurrency(r.esperado)}</span>
+                      <span className="font-mono text-muted-foreground text-right">{formatCurrency(r.nfse)}</span>
+                      <span className="text-right"><StatusLabel status={r.status} /></span>
+                    </div>
+                  ))}
+                </div>
+
+                {linhas.length > 1 && (
+                  <p className="text-xs text-warning-text mb-2">
+                    PIS, COFINS e CSLL gravam juntas como <strong>PCC</strong>: os campos abaixo valem para as tres.
+                  </p>
+                )}
+
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <Label className="block text-xs font-medium text-muted-foreground mb-1">Base de Calculo (R$)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={c.base}
+                      onChange={(e) => update(b.key, 'base', e.target.value)}
+                      placeholder={linhas[0]?.base != null ? String(linhas[0].base) : ''}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="block text-xs font-medium text-muted-foreground mb-1">Aliquota (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={c.aliquota}
+                      onChange={(e) => update(b.key, 'aliquota', e.target.value)}
+                      placeholder={linhas.length === 1 && linhas[0].aliquota !== '-' ? linhas[0].aliquota.replace('%', '') : ''}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="block text-xs font-medium text-muted-foreground mb-1">Valor Correto (R$)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={c.valor}
+                      onChange={(e) => update(b.key, 'valor', e.target.value)}
+                      placeholder={esperadoBloco > 0 ? esperadoBloco.toFixed(2) : ''}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="block text-xs font-medium text-muted-foreground mb-1">Retencao</Label>
+                    {/* Radix Select não aceita value="" — RETIDO_MANTER mapeia para '' (sem correção). */}
+                    <Select
+                      value={c.retido === '' ? RETIDO_MANTER : c.retido}
+                      onValueChange={(v) => update(b.key, 'retido', v === RETIDO_MANTER ? '' : v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={RETIDO_MANTER}>Manter</SelectItem>
+                        <SelectItem value="true">Retido</SelectItem>
+                        <SelectItem value="false">Nao retido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <Label className="block text-xs font-medium text-muted-foreground mb-1">Comentario (opcional)</Label>
+                  <Input
+                    type="text"
+                    value={c.comment}
+                    onChange={(e) => update(b.key, 'comment', e.target.value)}
+                    placeholder="Ex: Aliquota correta conforme LC 116 item 7.02"
+                  />
+                </div>
+              </div>
+            )
+          })}
         </div>
-        </div>
-        <SheetFooter className="flex-row justify-end gap-2 border-t border-border shrink-0">
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSubmit}>
-            <Send className="w-4 h-4" />
-            Enviar Correcao
-          </Button>
+
+        <SheetFooter className="flex-row items-center justify-between gap-2 border-t border-border shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {feedbacks.length === 0
+              ? 'Nenhum tributo alterado'
+              : `${feedbacks.length} tributo(s) a enviar: ${feedbacks.map((f) => f.tributo).join(', ')}`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button onClick={() => onSubmit(feedbacks)} disabled={feedbacks.length === 0}>
+              <Send className="w-4 h-4" />
+              Enviar Correcoes
+            </Button>
+          </div>
         </SheetFooter>
       </SheetContent>
     </Sheet>
   )
 }
 
-export default function NfseRetentionTab({ analysis, invoiceId }) {
-  const [correctionModal, setCorrectionModal] = useState(null) // row object or null
+export default function NfseRetentionTab({ analysis, invoiceId, invoice, isLoading = false, isError = false }) {
+  const [correctionModal, setCorrectionModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitResult, setSubmitResult] = useState(null)
-  const [invoiceFeedback, setInvoiceFeedback] = useState(null) // 'up' | 'down' | null
-  const [showCorrectionPanel, setShowCorrectionPanel] = useState(false)
+  // NFSC-02: o que foi enviado NESTA sessão, por chave de feedback, até a
+  // query da análise ser refeita. Guardado com o invoiceId para não vazar
+  // para outra nota. A fonte de verdade é analysis.feedbacks (servidor).
+  const [feedbackLocal, setFeedbackLocal] = useState({ invoiceId: null, map: {} })
+  const [showPrecedentesPanel, setShowPrecedentesPanel] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState(null) // { precedenteId, prestadorCnpj, codigoServico } | null
 
-  if (!analysis) {
-    return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-        Execute a validacao NFS-e para ver a analise de retencoes
-      </div>
-    )
+  const queryClient = useQueryClient()
+  const isFiscalAdm = useHasRole(ROLE_FISCAL_ADM)
+  // Mesmo mecanismo de role-gate do NF-e (EscrituracaoTab): só fiscal-adms
+  // pode revogar, e só quando a nota carrega a chave (company + prestador).
+  const canRevogarPrecedente = isFiscalAdm && !!invoice?.company_id && !!invoice?.emit_cnpj
+
+  if (isLoading) {
+    return <RetentionSkeleton />
+  }
+
+  if (isError || isAnalysisEmpty(analysis)) {
+    return <IncompleteAnalysisBanner />
   }
 
   const ret = analysis.retencoes || {}
   const cls = analysis.classification || {}
+
+  // NFSC-02: mapa por tributo hidratado do servidor (analysis.feedbacks, lido
+  // de nfse_ground_truth + feedbacks) — sobrevive a recarregar e a trocar de
+  // nota — com o overlay do que acabou de ser enviado nesta sessão. Chave =
+  // getFeedbackTributo: PIS/COFINS/CSLL compartilham a entrada PCC.
+  const feedbackPorTributo = {
+    ...(analysis.feedbacks || {}),
+    ...(feedbackLocal.invoiceId === invoiceId ? feedbackLocal.map : {}),
+  }
+  const marcarLocal = (entradas) => setFeedbackLocal((prev) => ({
+    invoiceId,
+    map: { ...(prev.invoiceId === invoiceId ? prev.map : {}), ...entradas },
+  }))
+
+  // U1 — badge de precedente (Fase 3 não-gated): NFSE-GT-001 na análise
+  // on-demand indica que um precedente v2 foi aplicado a esta nota.
+  const precedenteId = extractPrecedenteId(analysis)
+  const groundTruthSemPrecedente = precedenteId == null && hasGroundTruthAdjustment(analysis)
+
+  const handleRevogarPrecedente = (p) => {
+    if (!canRevogarPrecedente) return
+    setRevokeTarget({
+      precedenteId: p.id,
+      prestadorCnpj: invoice?.emit_cnpj,
+      codigoServico: p.codigo_servico_lc116,
+    })
+  }
+
+  const handleRevoked = () => {
+    setRevokeTarget(null)
+    setShowPrecedentesPanel(false)
+    queryClient.invalidateQueries({ queryKey: ['nfseAnalysis', invoiceId] })
+    queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    queryClient.invalidateQueries({ queryKey: ['statusCounts'] })
+  }
+
+  // Confirmar/corrigir muda o VEREDITO e (na confirmacao) carimba
+  // escriturada_em no backend. Sem invalidar, o estado ficava so local: o badge
+  // do detalhe e a coluna "Escrituracao" continuavam mostrando o valor antigo
+  // ate um reload manual. ['invoice', id] e a query do detalhe (useInvoiceDetail),
+  // que agora traz escrituracao_status computado.
+  const invalidateAposFeedback = () => {
+    queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+    queryClient.invalidateQueries({ queryKey: ['nfseAnalysis', invoiceId] })
+    queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    queryClient.invalidateQueries({ queryKey: ['statusCounts'] })
+  }
 
   const rows = [
     {
@@ -233,24 +567,48 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
       legislacao: 'LC 116/2003',
       extra: ret.iss?.retido_tomador ? 'Retido pelo tomador' : null,
     },
-  ]
+  ].map((r) => ({
+    ...r,
+    fundamentacoes: fundamentacoesFor(analysis, r.tributo),
+    feedback: feedbackPorTributo[getFeedbackTributo(r.tributo)] || null,
+  }))
+
+  // Chaves de feedback dos tributos aplicáveis (uma por chave: PIS/COFINS/
+  // CSLL viram uma só entrada PCC) e quantas já foram tratadas.
+  const chavesAplicaveis = [...new Set(
+    rows.filter((r) => r.status !== 'na' && r.status !== 'dispensado').map((r) => getFeedbackTributo(r.tributo))
+  )]
+  const tratados = chavesAplicaveis.filter((k) => feedbackPorTributo[k]).length
 
   // Per-invoice feedback: approve all retentions at once
   const handleApproveAll = async () => {
     if (!invoiceId) return
     try {
       setSubmitting(true)
-      const feedbacks = rows
-        .filter((r) => r.status !== 'na' && r.status !== 'dispensado')
-        .map((r) => ({
-          tributo: getFeedbackTributo(r.tributo),
-          motor_acertou: true,
-          correcoes: null,
-          comment: null,
-        }))
-      await api.submitNfseFeedback(invoiceId, feedbacks)
-      setInvoiceFeedback('up')
-      setSubmitResult({ type: 'success', message: 'Analise confirmada — feedback registrado para todos os tributos' })
+      // 25/09: "Confirmar" depois de corrigir confirma SÓ o que não foi
+      // corrigido — motor_acertou=true num tributo corrigido gravaria um
+      // "acertou" por cima da correção. Lista vazia (tudo corrigido) ainda
+      // escritura: é o analista declarando que a revisão terminou (NFSC-03).
+      const chaves = chavesParaConfirmar(chavesAplicaveis, feedbackPorTributo)
+      const feedbacks = chaves.map((tributo) => ({
+        tributo,
+        motor_acertou: true,
+        correcoes: null,
+        comment: null,
+      }))
+      const res = await api.submitNfseFeedback(invoiceId, feedbacks)
+      const em = new Date().toISOString()
+      marcarLocal(Object.fromEntries(chaves.map((k) => [k, { tipo: 'confirmado', valores: null, em }])))
+      invalidateAposFeedback()
+      // O backend recusa escriturar nota com veredito BLOQUEADO/CRITICO — o
+      // feedback foi registrado, mas a nota NAO ficou escriturada. Dizer isso.
+      setSubmitResult(res?.escrituracao_recusada
+        ? {
+            type: 'error',
+            message: `Feedback registrado, mas a nota esta ${res.escrituracao_recusada}: `
+              + 'resolva o bloqueio formal antes de escriturar.',
+          }
+        : { type: 'success', message: 'Analise confirmada — nota escriturada' })
     } catch {
       setSubmitResult({ type: 'error', message: 'Erro ao enviar confirmacao' })
     } finally {
@@ -259,20 +617,21 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
     }
   }
 
-  // Per-invoice reject: open correction panel
-  const handleRejectAnalysis = () => {
-    setShowCorrectionPanel(true)
-  }
-
-  // Submit correction for a specific tributo (from correction panel)
-  const handleCorrectionSubmit = async (feedback) => {
-    setCorrectionModal(null)
-    if (!invoiceId) return
+  // Submit das correções do modal (N feedbacks numa chamada, T21). Não fecha
+  // a nota: "Corrigir" e "Confirmar Analise" continuam disponíveis para
+  // corrigir o próximo tributo na mesma sessão (NFSC-01/03).
+  const handleCorrectionSubmit = async (feedbacks) => {
+    setCorrectionModal(false)
+    if (!invoiceId || feedbacks.length === 0) return
     try {
       setSubmitting(true)
-      await api.submitNfseFeedback(invoiceId, [feedback])
-      setInvoiceFeedback('down')
-      setSubmitResult({ type: 'success', message: `${feedback.tributo}: correcao enviada` })
+      await api.submitNfseFeedback(invoiceId, feedbacks)
+      const em = new Date().toISOString()
+      marcarLocal(Object.fromEntries(
+        feedbacks.map((f) => [f.tributo, { tipo: 'corrigido', valores: f.correcoes, em }])
+      ))
+      invalidateAposFeedback()
+      setSubmitResult({ type: 'success', message: `${feedbacks.map((f) => f.tributo).join(', ')}: correcao enviada` })
     } catch {
       setSubmitResult({ type: 'error', message: `Erro ao enviar correcao` })
     } finally {
@@ -296,7 +655,38 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
 
       {/* Classification Summary */}
       <div className="bg-info-subtle border border-info-border rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-info-text mb-2">Classificacao do Servico</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-info-text">Classificacao do Servico</h3>
+          {precedenteId != null && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setShowPrecedentesPanel(true)}
+                  className="rounded-full font-semibold bg-warning-subtle text-warning-text border-warning-border hover:bg-warning-subtle hover:text-warning-text hover:opacity-80"
+                >
+                  <Scale className="w-3 h-3" /> PRECEDENTE
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Uma ou mais retencoes desta nota vieram de um precedente NFS-e vigente. Clique para ver e, se necessario, revogar.
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {groundTruthSemPrecedente && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="gap-1.5 rounded-full font-semibold cursor-help">
+                  <Scale className="w-3 h-3" /> AJUSTE POR FEEDBACK
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Retencoes ajustadas por feedback humano agregado deste prestador (ground truth legado). Nao ha precedente revogavel associado.
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-info-text">Codigo LC 116:</span>{' '}
@@ -304,7 +694,7 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
           </div>
           <div>
             <span className="text-info-text">Grupo:</span>{' '}
-            <span className="font-medium text-info-text">{cls.descricao_servico || '-'}</span>
+            <span className="font-medium text-info-text whitespace-pre-wrap">{invoice.discriminacao_servico || cls.descricao_servico || '-'}</span>
           </div>
           <div>
             <span className="text-info-text">Regime Prestador:</span>{' '}
@@ -338,7 +728,10 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
                   row.status === 'ok' ? 'bg-success-subtle' : ''
                 }
               >
-                <TableCell className="px-4 py-3 font-semibold text-foreground">{row.tributo}</TableCell>
+                <TableCell className="px-4 py-3 font-semibold text-foreground">
+                  {row.tributo}
+                  {row.feedback && <FeedbackBadge feedback={row.feedback} />}
+                </TableCell>
                 <TableCell className="px-4 py-3 text-right font-mono text-foreground">{formatCurrency(row.base)}</TableCell>
                 <TableCell className="px-4 py-3 text-right font-mono text-foreground">{row.aliquota}</TableCell>
                 <TableCell className="px-4 py-3 text-right font-mono font-semibold text-foreground">{formatCurrency(row.esperado)}</TableCell>
@@ -347,9 +740,52 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
                   <StatusLabel status={row.status} />
                   {row.extra && <span className="block text-xs text-muted-foreground mt-0.5">{row.extra}</span>}
                 </TableCell>
-                <TableCell className="px-4 py-3 text-xs text-muted-foreground">{row.legislacao}</TableCell>
+                <TableCell className="px-4 py-3 text-xs text-muted-foreground">
+                  {row.legislacao}
+                  <FundamentacaoExpander fundamentacoes={row.fundamentacoes} />
+                </TableCell>
               </TableRow>
             ))}
+            {/*
+              Reforma tributária (IBS/CBS) — puramente informativo. Linhas
+              read-only: sem status de conformidade, sem botão Corrigir, sem
+              participar do feedback/alertas. Só aparecem quando o layout
+              nacional trouxe os valores (grupo IBSCBS).
+            */}
+            {(invoice?.valor_ibs != null || invoice?.valor_cbs != null) && (
+              <>
+                {invoice?.valor_ibs != null && (
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableCell className="px-4 py-3 font-semibold text-muted-foreground">IBS (reforma — informativo)</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(invoice.valor_ibs)}</TableCell>
+                    <TableCell className="px-4 py-3 text-center">
+                      <Badge variant="secondary">Informativo</Badge>
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-normal">
+                      Reforma tributária (EC 132/2023) — não consumido pelo motor
+                    </TableCell>
+                  </TableRow>
+                )}
+                {invoice?.valor_cbs != null && (
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableCell className="px-4 py-3 font-semibold text-muted-foreground">CBS (reforma — informativo)</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">-</TableCell>
+                    <TableCell className="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(invoice.valor_cbs)}</TableCell>
+                    <TableCell className="px-4 py-3 text-center">
+                      <Badge variant="secondary">Informativo</Badge>
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-xs text-muted-foreground whitespace-normal">
+                      Reforma tributária (EC 132/2023) — não consumido pelo motor
+                    </TableCell>
+                  </TableRow>
+                )}
+              </>
+            )}
           </TableBody>
         </Table>
 
@@ -425,69 +861,65 @@ export default function NfseRetentionTab({ analysis, invoiceId }) {
               A analise de retencoes desta NFS-e esta correta?
             </p>
           </div>
+          {/*
+            Os dois botões ficam SEMPRE disponíveis (NFSC-01/03): corrigir um
+            tributo não fecha a nota, e confirmar depois de corrigir é o que
+            encerra a revisão. O que já foi tratado aparece no badge da linha.
+          */}
           <div className="flex items-center gap-2">
-            {invoiceFeedback === 'up' ? (
-              <Badge variant="success" className="px-3 py-1.5 text-sm">
-                <Check className="w-4 h-4" /> Confirmada
-              </Badge>
-            ) : invoiceFeedback === 'down' ? (
-              <Badge variant="warning" className="px-3 py-1.5 text-sm">
-                <AlertTriangle className="w-4 h-4" /> Correcao enviada
-              </Badge>
-            ) : (
-              <>
-                <Button
-                  variant="success"
-                  onClick={handleApproveAll}
-                  disabled={submitting}
-                >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
-                  Confirmar Analise
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleRejectAnalysis}
-                  disabled={submitting}
-                  className="border-destructive-border text-destructive-text hover:bg-destructive-subtle"
-                >
-                  <ThumbsDown className="w-4 h-4" />
-                  Corrigir
-                </Button>
-              </>
+            {tratados > 0 && (
+              <span className="text-xs text-muted-foreground mr-1">
+                {tratados} de {chavesAplicaveis.length} tributos tratados
+              </span>
             )}
+            <Button
+              variant="success"
+              onClick={handleApproveAll}
+              disabled={submitting}
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+              Confirmar Analise
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setCorrectionModal(true)}
+              disabled={submitting}
+              className="border-destructive-border text-destructive-text hover:bg-destructive-subtle"
+            >
+              <ThumbsDown className="w-4 h-4" />
+              Corrigir
+            </Button>
           </div>
         </div>
 
-        {/* Correction panel: select which tributo to correct */}
-        {showCorrectionPanel && !invoiceFeedback && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Selecione o tributo a corrigir:</p>
-            <div className="flex flex-wrap gap-2">
-              {rows
-                .filter((r) => r.status !== 'na' && r.status !== 'dispensado')
-                .map((r) => (
-                  <Button
-                    key={r.tributo}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCorrectionModal(r)}
-                  >
-                    {r.tributo}
-                  </Button>
-                ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Correction Modal */}
       {correctionModal && (
         <CorrectionModal
-          row={correctionModal}
-          onClose={() => setCorrectionModal(null)}
+          rows={rows}
+          onClose={() => setCorrectionModal(false)}
           onSubmit={handleCorrectionSubmit}
         />
       )}
+
+      {/* Precedentes NFS-e do prestador (U1) */}
+      <NfsePrecedentesPanel
+        open={showPrecedentesPanel}
+        onClose={() => setShowPrecedentesPanel(false)}
+        companyId={invoice?.company_id}
+        prestadorCnpj={invoice?.emit_cnpj}
+        highlightPrecedenteId={precedenteId}
+        canRevogar={canRevogarPrecedente}
+        onRevogar={handleRevogarPrecedente}
+      />
+
+      {/* Revoke Precedente Modal */}
+      <RevokeNfsePrecedenteModal
+        target={revokeTarget}
+        onClose={() => setRevokeTarget(null)}
+        onRevoked={handleRevoked}
+      />
     </div>
   )
 }

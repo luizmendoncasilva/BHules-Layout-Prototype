@@ -1,12 +1,46 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { api } from '../api/client'
 
-export function useInvoices(params = {}) {
+export function useInvoices({ enabled = true, ...params } = {}) {
   return useQuery({
     queryKey: ['invoices', params],
     queryFn: () => api.getInvoices(params),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
+    enabled,
+  })
+}
+
+// Contagens por status do painel — FONTE ÚNICA para ListView e Sidebar
+// (FE-02, perf 18/08). Os dois montam no load; antes cada um tinha sua própria
+// query (`['statusCounts','55']` sem datas no Sidebar, com datas na ListView) →
+// 2 requests para o mesmo endpoint. Com a mesma queryKey e os mesmos params, o
+// React Query desduplica em 1 request.
+//
+// Consequência funcional aceita (decisão FE-02/D6 da spec): o badge do Sidebar
+// passa a contar o RECORTE DO PAINEL (mesmas datas/empresas da lista) — antes
+// contava o histórico inteiro, o que divergia do que a tela mostrava.
+//
+// A queryKey mantém o prefixo `['statusCounts', ...]`, então as invalidações
+// existentes (useUndoEscrituracao, DetailView, EscrituracaoTab) continuam
+// valendo. Polling: 60 s → 5 min e só com a aba visível.
+export function useStatusCounts({ codMod, startDate, endDate, companyIds, indEmit, indOper, enabled = true } = {}) {
+  const ids = companyIds && companyIds.length > 0 ? companyIds : undefined
+  const companyIdsKey = ids ? [...ids].sort().join(',') : ''
+  return useQuery({
+    queryKey: ['statusCounts', codMod, startDate || '', endDate || '', companyIdsKey, indEmit || '', indOper || ''],
+    queryFn: () => api.getStatusCounts(
+      ids,
+      codMod,
+      startDate || undefined,
+      endDate || undefined,
+      indEmit,
+      indOper,
+    ),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    refetchIntervalInBackground: false,
+    enabled,
   })
 }
 
@@ -16,6 +50,16 @@ export function useIntegratedInvoices({ companyIds, companyId, page = 1, size = 
     queryFn: () => api.getIntegratedInvoices({ companyIds, companyId, page, size, search, codMod, indEmit, startDate, endDate }),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
+  })
+}
+
+export function useNfsePrestadosGrupos({ companyIds, startDate, endDate, tipo, sinal, orderBy, page = 1, size = 50, enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['nfsePrestadosGrupos', { companyIds, startDate, endDate, tipo, sinal, orderBy, page, size }],
+    queryFn: () => api.getNfsePrestadosGrupos({ companyIds, startDate, endDate, tipo, sinal, orderBy, page, size }),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    enabled,
   })
 }
 
@@ -105,24 +149,7 @@ export function useInvoiceFeedback() {
   })
 }
 
-export function useClassificationOverrides(invoiceId) {
-  return useQuery({
-    queryKey: ['classificationOverrides', invoiceId],
-    queryFn: () => api.getClassificationOverrides(invoiceId),
-    enabled: !!invoiceId,
-  })
-}
 
-export function useSaveClassificationOverrides() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ invoiceId, items, motivo }) =>
-      api.saveClassificationOverrides(invoiceId, items, motivo),
-    onSuccess: (_, { invoiceId }) => {
-      queryClient.invalidateQueries({ queryKey: ['classificationOverrides', invoiceId] })
-    },
-  })
-}
 
 export function useUndoEscrituracao() {
   const queryClient = useQueryClient()

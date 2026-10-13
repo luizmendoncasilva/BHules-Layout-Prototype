@@ -163,8 +163,19 @@ export default function NfseReinfCrossTab({ analysis, invoice }) {
                   </div>
                   <div>
                     <span className="text-info-text">Nat. Rendimento:</span>{' '}
-                    <span className="font-mono font-semibold text-info-text">{analysis.reinf.r4020_suggestion.natureza_rendimento}</span>
-                    <span className="text-info-text text-xs ml-1">({analysis.reinf.r4020_suggestion.natureza_descricao})</span>
+                    {analysis.reinf.r4020_suggestion.natureza_rendimento ? (
+                      <>
+                        <span className="font-mono font-semibold text-info-text">{analysis.reinf.r4020_suggestion.natureza_rendimento}</span>
+                        <span className="text-info-text text-xs ml-1">({analysis.reinf.r4020_suggestion.natureza_descricao})</span>
+                      </>
+                    ) : (
+                      <span className="font-semibold text-warning-text">
+                        INDEFINIDA — confirmar antes de declarar
+                        {analysis.reinf.r4020_suggestion.natureza_rendimento_candidata
+                          ? ` (candidata: ${analysis.reinf.r4020_suggestion.natureza_rendimento_candidata})`
+                          : ''}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-info-text">CNPJ Beneficiario:</span>{' '}

@@ -9,7 +9,7 @@ import {
 } from '@bhubai/bhub-design-system'
 import {
   Search, Columns, Eye, ChevronRight, Calendar, Filter, MoreVertical, Download, FileSpreadsheet,
-  X, Check, GripVertical, Play, ThumbsUp, ThumbsDown, Send, Zap, Loader2, Undo2, CheckCheck, Lock,
+  X, Check, GripVertical, ThumbsUp, ThumbsDown, Send, Zap, Loader2, Undo2, CheckCheck, Lock, RotateCcw,
 } from 'lucide-react'
 import { api } from '../../api/client'
 import InvoiceSheet from './InvoiceSheet'
@@ -19,8 +19,16 @@ import { useCompanies } from '../../hooks/useCompanies'
 import StatusBadge from '../shared/StatusBadge'
 import Pagination from '../shared/Pagination'
 import { formatCnpj } from '../../utils/cnpj'
-import ReprocessingModal from './ReprocessingModal'
+import { filtrarEmpresas } from '../../utils/matchEmpresa'
+import { getMesCorrenteRange } from '../../utils/dateRange'
 import ExportProgressModal from './ExportProgressModal'
+import RevokePrecedentesNotasModal from '../precedentes/RevokePrecedentesNotasModal'
+import { useHasRole, ROLE_FISCAL_ADM } from '../../auth/roles'
+import TributacaoServicosTab from '../tributacao/TributacaoServicosTab'
+import { RevisoesExportacaoVisaoGeral } from '../exportacao/RevisoesExportacaoVisaoGeral'
+
+// Teto do backend para revogar precedentes em lote (PREC-02).
+const REVOGAR_PRECEDENTES_MAX = 500
 
 // --- Column definitions per tab (matching original design) ---
 
@@ -31,8 +39,11 @@ const materiaisColumns = [
   { id: 'amount', label: 'Valor', defaultVisible: true },
   { id: 'issueDate', label: 'Data de Emissão', defaultVisible: true },
   { id: 'competenceDate', label: 'Vencimento', defaultVisible: false },
-  { id: 'statusNfe', label: 'Status NF-e', defaultVisible: true },
+  // Situação da nota (cod_sit): rótulo pedido pela Célula 19/08 (item 3.5) —
+  // "Situação", para as canceladas ficarem visíveis no painel.
+  { id: 'statusNfe', label: 'Situação', defaultVisible: true },
   { id: 'statusAnalise', label: 'Status Análise', defaultVisible: true },
+  { id: 'erroGrave', label: 'Erro Grave', defaultVisible: true },
   { id: 'integracaoApi', label: 'Integração API', defaultVisible: true },
   { id: 'escrituracaoStatus', label: 'Escrituração', defaultVisible: true },
   { id: 'status', label: 'Motor BHub', defaultVisible: true },
@@ -85,9 +96,17 @@ const servicosColumns = [
   { id: 'amount', label: 'Valor Servico', defaultVisible: true },
   { id: 'issueDate', label: 'Data de Emissão', defaultVisible: true },
   { id: 'dataPagamento', label: 'Data Pagamento', defaultVisible: true },
+  // Situação (cod_sit) também para NFS-e: cancelamento tem cobertura de
+  // captura desde 12/08 (#553/#824) e o dado já vem na listagem — custo zero.
+  // Oculta por default para não mexer no layout da aba do piloto.
+  { id: 'statusNfe', label: 'Situação', defaultVisible: false },
   { id: 'statusAnalise', label: 'Status Análise', defaultVisible: true },
   { id: 'integracaoApi', label: 'Integração API', defaultVisible: true },
   { id: 'escrituracaoStatus', label: 'Escrituração', defaultVisible: true },
+  // Marca do robô de NFTS (escriturada_autopilot_em): a nota foi DECLARADA na
+  // prefeitura via write-back da API de apurações. Quarta dimensão — não é o
+  // OK do analista (Escrituração) nem o dual-write (Integração API).
+  { id: 'escrituracaoNfts', label: 'Escrituração NFTS', defaultVisible: true },
   { id: 'status', label: 'Motor BHules', defaultVisible: true },
   { id: 'codigoServico', label: 'Cod. Servico', defaultVisible: false },
   { id: 'regimePrestador', label: 'Regime', defaultVisible: false },
@@ -120,6 +139,17 @@ const TAB_CONFIG = {
 }
 
 const DEFAULT_TAB = 'materiais_recebidas_entradas'
+
+// Abas "extras" do módulo Notas Fiscais trazidas do oficial: não são recortes
+// de notas, e sim telas próprias (parâmetros tributários por empresa e
+// revisões de exportação). Como a navegação por tipo/direção vive na sidebar,
+// elas ficam numa faixa de abas no cabeçalho do ListView (estado local) — e
+// também são aceitas via `activeTab` caso a sidebar passe a apontá-las.
+const CUSTOM_TABS = {
+  PARAMETROS_EMPRESA: { label: 'Parâmetros da empresa', isNew: true },
+  REVISOES_EXPORTACAO: { label: 'Revisões Exportação' },
+}
+const NOTAS_TAB_VALUE = '__notas__'
 
 const PROBLEM_TYPE_LABELS = {
   municipio_incidencia: 'Município Incidência',
@@ -176,13 +206,7 @@ function formatDate(val) {
 }
 
 // formatCnpj importado de utils/cnpj — suporta CNPJ alfanumérico (RFB jul/2026).
-
-function getDefaultDateRange() {
-  const now = new Date()
-  const end = now.toISOString().slice(0, 10)
-  const start = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().slice(0, 10)
-  return { startDate: start, endDate: end }
-}
+// Faixa de datas padrão: utils/dateRange (mês corrente, horário local).
 
 // --- Date-type columns (for filter row) ---
 const dateColumnIds = new Set(['issueDate', 'competenceDate'])
@@ -191,7 +215,16 @@ const dateColumnIds = new Set(['issueDate', 'competenceDate'])
 const nonFilterableColumns = new Set(['feedback'])
 
 // --- Select-filter columns (dropdown instead of text input) ---
-const selectFilterColumns = new Set(['status', 'statusAnalise', 'integracaoApi', 'escrituracaoStatus'])
+const selectFilterColumns = new Set(['status', 'statusAnalise', 'integracaoApi', 'escrituracaoStatus', 'erroGrave', 'statusNfe'])
+
+// Colunas cujo filtro é resolvido no BACKEND (PR-A). O useMemo client-side
+// NÃO reaplica essas — senão o refinamento duplo sobre a página carregada
+// esconde linhas que o servidor já filtrou corretamente no dataset inteiro.
+const serverBackedFilterColumns = new Set([
+  'number', 'issuerName', 'issuerDocument', 'takerDocument', 'takerName', 'amount',
+  'issueDate', 'statusNfe', 'statusAnalise', 'erroGrave', 'integracaoApi',
+  'escrituracaoStatus',
+])
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -225,8 +258,49 @@ const INTEGRACAO_API_OPTIONS = [
   { value: 'sim', label: 'Integrada' },
 ]
 
+// Trava de Erros Graves de CFOP: nota com ≥1 item cujo par (CFOP emitente ×
+// CFOP entrada) casou com a tabela de curadoria fiscal (mig 145).
+const ERRO_GRAVE_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'sim', label: 'Com Erro Grave' },
+]
+
+// Situação da nota (cod_sit, tabela 4.1.2 do SPED) — semântica documentada no
+// backend: 02/03 = cancelamento (capture_sync._CANCEL_COD_SIT), 04 = denegada
+// (metrics.py), 05 = inutilizada (pgdasd._CANCEL_SIT cobre 02–05). Código fora
+// do mapa passa cru; NULL vira '—' (ausência de dado não é "Regular"). Mesmo
+// mapa da coluna "Situação" do export XLSX (xlsx_export._SITUACAO_LABEL) —
+// manter os dois em sincronia.
+const COD_SIT_LABELS = {
+  '00': 'Regular',
+  '02': 'Cancelada',
+  '03': 'Cancelada (extemporânea)',
+  '04': 'Denegada',
+  '05': 'Inutilizada',
+}
+
+// Situação da NF-e (cod_sit) — select em vez de texto livre p/ enviar o código
+// cru ao backend (cod_sit), evitando a ambiguidade de digitar "Cancelada".
+const STATUS_NFE_OPTIONS = [
+  { value: '', label: 'Todos' },
+  ...Object.entries(COD_SIT_LABELS).map(([value, label]) => ({ value, label })),
+]
+
+// dd/mm/aaaa → ISO yyyy-mm-dd (ou null se incompleto/inválido). Usado para
+// mapear o filtro de coluna "Emissão" para start_date+end_date (mesmo dia).
+function parseBrDateToIso(s) {
+  const m = String(s || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return null
+  const [, dd, mm, yyyy] = m
+  const iso = `${yyyy}-${mm}-${dd}`
+  const d = new Date(`${iso}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? null : iso
+}
+
 // --- Helper: get raw text value of a cell for filtering ---
-function getRawCellText(inv, colId, companyName, companies) {
+// `companiesById`: Map id→empresa (FE-03) — antes era o array de empresas com
+// um `find()` por linha filtrada.
+function getRawCellText(inv, colId, companyName, companiesById) {
   switch (colId) {
     case 'amount': return String(inv.vl_doc ?? inv.amount ?? '')
     case 'issueDate': return inv.dt_doc ?? inv.issueDate ?? ''
@@ -236,7 +310,7 @@ function getRawCellText(inv, colId, companyName, companies) {
     case 'takerDocument': return inv.dest_cnpj ?? inv.takerDocument ?? ''
     case 'issuerName': return inv.emit_razao_social ?? inv.issuerName ?? ''
     case 'takerName': {
-      const co = (companies || []).find(c => c.id === inv.company_id)
+      const co = companiesById?.get(inv.company_id)
       return co?.razao_social || co?.name || companyName || inv.dest_cnpj || ''
     }
     case 'key': return inv.chave_nfe ?? inv.key ?? ''
@@ -248,12 +322,12 @@ function getRawCellText(inv, colId, companyName, companies) {
     }
     case 'statusNfe': {
       const sit = inv.cod_sit
-      const labels = { '00': 'Regular', '02': 'Cancelada', '03': 'Inutilizada', '04': 'Denegada' }
-      let text = labels[sit] || sit || 'Regular'
+      let text = COD_SIT_LABELS[sit] || sit || '—'
       if (inv.carta_correcao) text += ' / CC-e'
       return text
     }
     case 'statusAnalise': return inv.status_analise ?? ''
+    case 'erroGrave': return inv.categoria_erro_grave ? 'sim' : ''
     case 'oportunidades': return inv.oportunidades_count || 0
     case 'escrituracaoStatus': return inv.escrituracao_status || 'PENDENTE'
     case 'subtype': return inv.cod_mod ?? ''
@@ -271,6 +345,7 @@ function getRawCellText(inv, colId, companyName, companies) {
     case 'dataPagamento': return inv.data_pagamento ?? ''
     case 'confidence': return inv.status_analise ?? ''  // confidence rendered in cell renderer
     case 'integracaoApi': return inv.integrado_api_em ? 'sim' : ''
+    case 'escrituracaoNfts': return inv.escriturada_autopilot_em ? 'escriturada' : ''
     default: return String(inv[colId] ?? '')
   }
 }
@@ -443,12 +518,31 @@ function FeedbackCell({ invoiceId, isNfse, feedbackMap, onVote, locked }) {
 export default function ListView({ onRowClick, activeTab: activeTabProp, onTabChange, startDate: startDateProp, onStartDateChange, endDate: endDateProp, onEndDateChange, companyIds: companyIdsProp, onCompanyIdsChange }) {
   const { companyName } = useCompany()
   const { data: companies = [] } = useCompanies()
+  // Índice id→empresa (FE-03/RD-02). `companies.find()` por linha custava, no
+  // pior caso, ~70.000 comparações por render de página (1.400 empresas x 50
+  // linhas; eram ~140.000 com as 100 linhas do default anterior) e repetia a
+  // varredura em cada célula `takerName` e em cada filtro de coluna local.
+  const companiesById = useMemo(
+    () => new Map((companies || []).map((c) => [c.id, c])),
+    [companies],
+  )
   const [activeTabLocal, setActiveTabLocal] = useState(DEFAULT_TAB)
   const activeTab = activeTabProp ?? activeTabLocal
   const setActiveTab = (tab) => { setActiveTabLocal(tab); onTabChange?.(tab) }
   const activeCfg = TAB_CONFIG[activeTab] || TAB_CONFIG[DEFAULT_TAB]
+  // Abas extras (Parâmetros da empresa / Revisões Exportação): estado local,
+  // sobreposto à sub-tela de notas escolhida na sidebar. Também aceita o id
+  // vindo por `activeTab`, caso a sidebar passe a navegar direto para elas.
+  const [customTabLocal, setCustomTabLocal] = useState(null)
+  const customTab = CUSTOM_TABS[activeTab] ? activeTab : customTabLocal
+  const isCustomTab = customTab != null
+  // Faixa de abas extras só no módulo Notas Fiscais (NF-e/NFS-e) — CT-e e
+  // NFC-e reutilizam este componente, mas não têm essas telas.
+  const showCustomTabs = !!CUSTOM_TABS[activeTab] || activeCfg.type === 'NFE' || activeCfg.type === 'NFSE'
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(100)
+  // FE-03: default 100 → 50 linhas (a Pagination segue oferecendo 100/200).
+  // Menos payload e menos render no carregamento inicial da tela.
+  const [pageSize, setPageSize] = useState(50)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -461,6 +555,8 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // Row selection for batch operations
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const [revogandoPrecedentes, setRevogandoPrecedentes] = useState(null) // invoice ids | null
+  const isFiscalAdm = useHasRole(ROLE_FISCAL_ADM)
 
   // Advanced filters
   const [cnpjEmitFilter, setCnpjEmitFilter] = useState('')
@@ -481,10 +577,6 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   const [batchRunning, setBatchRunning] = useState(false)
   const [batchResult, setBatchResult] = useState(null)
 
-  // Reprocess modal state
-  const [showReprocessModal, setShowReprocessModal] = useState(false)
-  const [reprocessProgress, setReprocessProgress] = useState(null)
-
   // Undo escrituracao
   const undoMutation = useUndoEscrituracao()
 
@@ -495,6 +587,11 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       .filter(c => isNfseTab ? c.nfse_servicos_enabled : c.nfe_entrada_enabled)
       .sort((a, b) => (a.razao_social || '').localeCompare(b.razao_social || '', 'pt-BR')),
     [companies, isNfseTab],
+  )
+  // Busca do dropdown: razão social, nome fantasia ou CNPJ com/sem máscara (GL-C4).
+  const visibleCompanies = useMemo(
+    () => filtrarEmpresas(sortedCompanies, companySearch),
+    [sortedCompanies, companySearch],
   )
 
   // Column config drawer
@@ -508,7 +605,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   )
 
   // Date range (shared via props when available)
-  const defaults = getDefaultDateRange()
+  const defaults = getMesCorrenteRange()
   const [localStartDate, setLocalStartDate] = useState(defaults.startDate)
   const [localEndDate, setLocalEndDate] = useState(defaults.endDate)
   const startDate = startDateProp ?? localStartDate
@@ -518,6 +615,10 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // Inline column filters
   const [columnFilters, setColumnFilters] = useState({})
+  // Cópia com debounce (PR-A): os filtros de coluna server-side consultam o
+  // dataset inteiro no backend. Debouncing evita uma refetch por tecla nos
+  // campos de texto (número, emitente, CNPJ, valor).
+  const [debouncedColumnFilters, setDebouncedColumnFilters] = useState({})
 
   // Feedback state (local cache: invoiceId -> 'up'|'down')
   const [feedbackMap, setFeedbackMap] = useState({})
@@ -534,6 +635,8 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     setColumnFilters({})
     setProblemTypeFilter('')
     setSelectedCompanyIds([])
+    // Navegar pela sidebar para outra sub-tela de notas sai das abas extras.
+    setCustomTabLocal(null)
   }, [activeTab])
 
   // Debounce search
@@ -552,8 +655,14 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     return () => clearTimeout(t)
   }, [cnpjDestFilter])
 
+  // Debounce dos filtros de coluna (PR-A) — ~400ms, igual aos filtros de CNPJ.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedColumnFilters(columnFilters), 400)
+    return () => clearTimeout(t)
+  }, [columnFilters])
+
   // Reset page and selection on filter change
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setBatchResult(null) }, [selectedCompanyIds, activeTab, debouncedSearch, startDate, endDate, statusAnaliseFilter, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter, regimeFilter])
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setBatchResult(null) }, [selectedCompanyIds, activeTab, debouncedSearch, startDate, endDate, statusAnaliseFilter, debouncedCnpjEmit, debouncedCnpjDest, problemTypeFilter, regimeFilter, debouncedColumnFilters])
 
   // Close company dropdown on outside click
   useEffect(() => {
@@ -575,6 +684,10 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   // Invalidacao acontece nas mutations relevantes (DetailView, EscrituracaoTab,
   // useUndoEscrituracao) — sem polling de 60s, que era custo inutil em abas
   // ociosas (multiplica # de tabs abertas x analistas).
+  // Obs.: o oficial moveu esta query para o hook `useStatusCounts` (dedupe com
+  // o Sidebar), mas ele não aceita o filtro de regime federal do proto — por
+  // isso a query fica inline aqui, com o mesmo prefixo de queryKey
+  // (['statusCounts', ...]) para as invalidações continuarem valendo.
   const { data: statusCounts = {} } = useQuery({
     queryKey: ['statusCounts', currentCodMod, currentIndEmit, currentIndOper, selectedCompanyIds, startDate, endDate, regimeFilter],
     queryFn: () => api.getStatusCounts(
@@ -587,13 +700,14 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       regimeFilter || undefined
     ),
     staleTime: 60_000,
+    enabled: !isCustomTab,
   })
 
   // Problem types for NFS-e filter
   const { data: problemTypes = [] } = useQuery({
     queryKey: ['problemTypes', currentCodMod],
     queryFn: () => api.getProblemTypes(currentCodMod),
-    enabled: currentCodMod === 'NFSE',
+    enabled: currentCodMod === 'NFSE' && !isCustomTab,
   })
 
   const toggleCompany = (id) => {
@@ -605,11 +719,39 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   const companyFilterLabel = useMemo(() => {
     if (selectedCompanyIds.length === 0) return 'Todos os clientes'
     if (selectedCompanyIds.length === 1) {
-      const c = companies.find((x) => x.id === selectedCompanyIds[0])
+      const c = companiesById.get(selectedCompanyIds[0])
       return c?.razao_social || 'Cliente'
     }
     return `${selectedCompanyIds.length} clientes`
-  }, [selectedCompanyIds, companies])
+  }, [selectedCompanyIds, companiesById])
+
+  // Filtros de coluna → params server-side (PR-A). Mapa coluna→param:
+  // number→numDoc, issuerName→emitNome, issuerDocument→cnpjEmit,
+  // takerDocument→cnpjDest, takerName→destNome (razão social/nome fantasia
+  // da EMPRESA da nota — a coluna mostra a empresa, Célula 24/09 item 3.2),
+  // amount→vlDoc, statusNfe→codSit (código cru),
+  // erroGrave→erroGrave, integracaoApi→integradoApi,
+  // escrituracaoStatus→escrituracaoStatus, issueDate→startDate+endDate (mesmo
+  // dia). statusAnalise já é server-side via statusAnaliseFilter (pills).
+  const serverColumnFilters = useMemo(() => {
+    const cf = debouncedColumnFilters
+    const t = (v) => (v && v.trim() ? v.trim() : undefined)
+    const issueDay = parseBrDateToIso(cf.issueDate)
+    return {
+      numDoc: t(cf.number),
+      emitNome: t(cf.issuerName),
+      cnpjEmit: t(cf.issuerDocument),
+      cnpjDest: t(cf.takerDocument),
+      destNome: t(cf.takerName),
+      vlDoc: t(cf.amount),
+      codSit: t(cf.statusNfe),
+      erroGrave: t(cf.erroGrave),
+      integradoApi: t(cf.integracaoApi),
+      escrituracaoStatus: t(cf.escrituracaoStatus),
+      startDate: issueDay || undefined,
+      endDate: issueDay || undefined,
+    }
+  }, [debouncedColumnFilters])
 
   // Use DB invoices — single status filter via pills (no escrituracaoStatus)
   const { data, isLoading, refetch } = useInvoices({
@@ -620,13 +762,24 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     codMod: currentCodMod || undefined,
     indEmit: currentIndEmit || undefined,
     indOper: currentIndOper || undefined,
-    startDate: startDate || undefined,
-    endDate: endDate || undefined,
+    // Filtro de coluna "Emissão" (dia único) tem precedência sobre a faixa da toolbar.
+    startDate: serverColumnFilters.startDate || startDate || undefined,
+    endDate: serverColumnFilters.endDate || endDate || undefined,
     statusAnalise: statusAnaliseFilter || undefined,
-    cnpjEmit: debouncedCnpjEmit || undefined,
-    cnpjDest: debouncedCnpjDest || undefined,
+    // CNPJ: filtro de coluna tem precedência sobre o filtro avançado da toolbar.
+    cnpjEmit: serverColumnFilters.cnpjEmit || debouncedCnpjEmit || undefined,
+    cnpjDest: serverColumnFilters.cnpjDest || debouncedCnpjDest || undefined,
     problemType: problemTypeFilter || undefined,
     regimeTributario: regimeFilter || undefined,
+    numDoc: serverColumnFilters.numDoc,
+    emitNome: serverColumnFilters.emitNome,
+    destNome: serverColumnFilters.destNome,
+    codSit: serverColumnFilters.codSit,
+    erroGrave: serverColumnFilters.erroGrave,
+    vlDoc: serverColumnFilters.vlDoc,
+    integradoApi: serverColumnFilters.integradoApi,
+    escrituracaoStatus: serverColumnFilters.escrituracaoStatus,
+    enabled: !isCustomTab,
   })
 
   // Invoices from API (already filtered by cod_mod server-side)
@@ -649,65 +802,6 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // statusCounts now managed by React Query (queryKey: ['statusCounts'])
 
-  // Reprocess engine (async SQS + polling)
-  const handleReprocessConfirmed = async () => {
-    if (reprocessProgress) return
-    // Use only companies that actually have invoices on screen
-    const idsFromInvoices = [...new Set(allInvoices.map((inv) => inv.company_id))]
-    const ids = selectedCompanyIds.length > 0 ? selectedCompanyIds : idsFromInvoices
-    setReprocessProgress({ current: 0, total: 0, errors: 0 })
-    try {
-      // Dispatch async jobs — use NFS-e endpoint when on Serviços tab
-      const reprocessFn = isNfseTab ? api.reprocessNfseAsync : api.reprocessCompanyAsync
-      const jobPromises = ids.map((cid) => reprocessFn(cid, startDate, endDate))
-      const jobResults = await Promise.allSettled(jobPromises)
-      const jobs = jobResults
-        .filter((r) => r.status === 'fulfilled')
-        .map((r) => r.value)
-
-      if (jobs.length === 0) {
-        setReprocessProgress(null)
-        return
-      }
-
-      const totalInvoices = jobs.reduce((sum, j) => sum + (j.total_invoices || 0), 0)
-      setReprocessProgress({ current: 0, total: totalInvoices, errors: 0, jobs })
-
-      // Poll progress every 2s
-      const pollInterval = setInterval(async () => {
-        try {
-          const statuses = await Promise.all(
-            jobs.map((j) => api.getReprocessStatus(j.job_id))
-          )
-          const totalProcessed = statuses.reduce((s, j) => s + (j.processed || 0), 0)
-          const totalErrors = statuses.reduce((s, j) => s + (j.errors || 0), 0)
-          const totalAll = statuses.reduce((s, j) => s + (j.total_invoices || 0), 0)
-
-          setReprocessProgress((prev) => ({
-            ...prev,
-            current: Math.max(prev?.current || 0, totalProcessed),
-            total: Math.max(prev?.total || 0, totalAll),
-            errors: totalErrors,
-            jobs: statuses,
-          }))
-
-          const allDone = statuses.every(
-            (j) => ['COMPLETED', 'FAILED', 'CANCELLED'].includes(j.status)
-          )
-          if (allDone) {
-            clearInterval(pollInterval)
-            // Don't auto-dismiss — user closes from results modal
-          }
-        } catch {
-          // ignore poll errors, retry next tick
-        }
-      }, 2000)
-    } catch (e) {
-      console.error('Reprocess error:', e)
-      setReprocessProgress(null)
-    }
-  }
-
   // Batch undo handler
   const handleBatchUndo = useCallback(async () => {
     if (selectedIds.size === 0) return
@@ -725,7 +819,13 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     setBatchRunning(true)
     setBatchResult(null)
     try {
-      const result = await api.runEscrituracaoBatch(Array.from(selectedIds))
+      const result = isNfseTab
+        ? await api.batchFeedback({
+            invoice_ids: Array.from(selectedIds),
+            action: 'escriturar',
+            analista: 'listagem',
+          })
+        : await api.runEscrituracaoBatch(Array.from(selectedIds))
       setBatchResult({ success: true, count: result?.total_processed ?? selectedIds.size })
       setSelectedIds(new Set())
       refetch()
@@ -734,7 +834,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     } finally {
       setBatchRunning(false)
     }
-  }, [batchRunning, selectedIds, refetch])
+  }, [batchRunning, selectedIds, refetch, isNfseTab])
 
   // Batch approve handler
   const [approveRunning, setApproveRunning] = useState(false)
@@ -792,12 +892,21 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   // 10MB de payload). Modal não-bloqueante mostra progresso.
   const [exportJob, setExportJob] = useState(null) // { job_id, status, ... } | null
   // Tipo de NF do export: '' = todos (abas por tipo), ou entrada|saida|servico|cte.
-  const [exportTipo, setExportTipo] = useState('')
+  // R-EXPORT: direção do export nos 4 layouts oficiais (emitidas/recebidas).
+  // '' = caminho legado (3 abas unificadas, sem segregação por direção).
   // O job roda no servidor e sobrevive a recargas/expiração de token. Guardamos
   // o job_id ativo no localStorage para retomar o polling após reload — sem
   // isso, fechar/recarregar a aba "perdia" um export que já estava pronto no S3.
   const EXPORT_JOB_KEY = 'bhules_export_job_id'
-  const handleExportExcel = useCallback(async () => {
+  // `layout`: undefined = layouts padrão; 'unecont' = modelo Unecont de NFS-e
+  // tomados (UNE, Célula 19/08 item 3.4) — só oferecido na aba NFS-e.
+  // Escopo do export derivado da sub-tela ativa do proto (TAB_CONFIG):
+  // tipo por documento e direção pelo ind_emit (0=emitidas, 1=recebidas).
+  const exportTipoNf = { NFSE: 'servico', CTE: 'cte' }[activeCfg.type]
+  const exportDirecao = activeCfg.indEmit === '0' ? 'emitidas' : activeCfg.indEmit === '1' ? 'recebidas' : undefined
+  // Unecont = modelo de NFS-e TOMADOS; prestados seguem o layout padrão.
+  const useUnecontExport = isNfseTab && activeCfg.indEmit === '1'
+  const startExportExcel = useCallback(async (layout) => {
     try {
       const invoiceIds = selectedIds.size > 0 ? Array.from(selectedIds) : undefined
       const { job_id } = await api.createExportXlsxJob({
@@ -805,14 +914,18 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         invoiceIds,
-        tipoNf: exportTipo || undefined,
+        tipoNf: exportTipoNf,
+        // Unecont já é por definição NFS-e tomados — não manda direção.
+        direcao: layout === 'unecont' ? undefined : exportDirecao,
+        layout,
       })
       try { localStorage.setItem(EXPORT_JOB_KEY, job_id) } catch { /* ignore */ }
       setExportJob({ job_id, status: 'PENDING' })
     } catch (err) {
       setExportJob({ status: 'FAILED', error_message: err?.message || 'Falha ao iniciar export' })
     }
-  }, [selectedIds, selectedCompanyIds, startDate, endDate, exportTipo])
+  }, [selectedIds, selectedCompanyIds, startDate, endDate, exportTipoNf, exportDirecao])
+  const handleExportExcel = useCallback(() => startExportExcel(undefined), [startExportExcel])
 
   // Retoma um export em andamento após reload (job_id persistido).
   useEffect(() => {
@@ -870,18 +983,22 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   const availableStatusAnaliseOptions = STATUS_ANALISE_OPTIONS
 
-  // Apply inline column filters (client-side)
+  // Apply inline column filters (client-side) — SOMENTE colunas sem param
+  // server-side (serie, chave e colunas exclusivas de NFS-e). As
+  // colunas server-backed (PR-A) já vêm filtradas do backend sobre o dataset
+  // inteiro; reaplicá-las aqui esconderia linhas legítimas da página.
   const invoices = useMemo(() => {
-    const activeFilters = Object.entries(columnFilters).filter(([, v]) => v.trim())
+    const activeFilters = Object.entries(columnFilters)
+      .filter(([colId, v]) => v.trim() && !serverBackedFilterColumns.has(colId))
     if (activeFilters.length === 0) return allInvoices
     return allInvoices.filter((inv) =>
       activeFilters.every(([colId, filterVal]) => {
-        const raw = getRawCellText(inv, colId, companyName, companies)
+        const raw = getRawCellText(inv, colId, companyName, companiesById)
         if (selectFilterColumns.has(colId)) return raw === filterVal
         return raw.toLowerCase().includes(filterVal.toLowerCase())
       })
     )
-  }, [allInvoices, columnFilters])
+  }, [allInvoices, columnFilters, companyName, companiesById])
 
   // Select all / deselect all for visible (filtered) invoices
   const allVisibleSelected = invoices.length > 0 && invoices.every((inv) => selectedIds.has(inv.id))
@@ -918,7 +1035,11 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   const visibleColumns = columns.filter((c) => c.visible)
 
-  function getCellValue(inv, colId) {
+  // FE-03: `useCallback` — hoje a função só é chamada inline no `map` das
+  // linhas, então a identidade estável não muda nada por si só; é preparação
+  // para a memoização/virtualização de linha, que está fora do escopo desta
+  // rodada. Fecha sobre companiesById/companyName/refetch.
+  const getCellValue = useCallback(function getCellValue(inv, colId) {
     // Map IntegradorNF field names → DB Invoice model fields
     switch (colId) {
       case 'amount':
@@ -936,8 +1057,8 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       case 'issuerName':
         return inv.emit_razao_social ?? inv.issuerName ?? '-'
       case 'takerName': {
-        // Look up company name by company_id from the companies list
-        const co = companies.find(c => c.id === inv.company_id)
+        // Look up company name by company_id (Map indexado — FE-03)
+        const co = companiesById.get(inv.company_id)
         return co?.razao_social || co?.name || companyName || (inv.dest_cnpj ? formatCnpj(inv.dest_cnpj) : '-')
       }
       case 'key':
@@ -946,7 +1067,15 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         return inv.serie ?? '-'
       case 'escrituracaoStatus': {
         const es = inv.escrituracao_status
-        if (es === 'ESCRITURADA') return <StatusBadge status="ESCRITURADA" />
+        // NFS-e escriturada = analise fiscal concluida (nada e' publicado para
+        // fora); NF-e escriturada = entregue ao Onvio/Dominio. Rotulo igual,
+        // cores distintas — ver StatusBadge.
+        if (es === 'ESCRITURADA') {
+          return <StatusBadge status={inv.cod_mod === 'NFSE' ? 'ESCRITURADA_NFSE' : 'ESCRITURADA'} />
+        }
+        // ANALISADA/CONFIANCA_BAIXA: valores aceitos pelo FILTRO server-side,
+        // nunca emitidos pela coluna computada — mantidos para nao quebrar caso
+        // o backend passe a emiti-los.
         if (es === 'ANALISADA') return <StatusBadge status="ANALISADA" />
         if (es === 'CONFIANCA_BAIXA') return <StatusBadge status="CONFIANCA_BAIXA" />
         return <span className="text-neutral-300">-</span>
@@ -961,35 +1090,49 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       }
       case 'statusNfe': {
         const sit = inv.cod_sit
-        const labels = { '00': 'Regular', '02': 'Cancelada', '03': 'Inutilizada', '04': 'Denegada' }
-        const label = labels[sit] || sit || 'Regular'
-        const isCancelled = sit === '02'
-        const isDenied = sit === '03' || sit === '04'
+        const label = COD_SIT_LABELS[sit] || sit
+        // 02/03 = cancelamento (vermelho, o que a Célula precisa enxergar);
+        // 04/05 = denegada/inutilizada (âmbar). Sem cod_sit não há badge:
+        // ausência de dado não é atestado de nota regular.
+        const isCancelled = sit === '02' || sit === '03'
+        const isDenied = sit === '04' || sit === '05'
         const hasCCe = inv.carta_correcao
         return (
-            <span className="inline-flex items-center gap-1">
-      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-        isCancelled ? 'bg-destructive-subtle text-destructive-text'
-        : isDenied ? 'bg-warning-subtle text-warning-text'
-        : 'bg-success-subtle text-success-text'
-      }`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-          isCancelled ? 'bg-destructive' : isDenied ? 'bg-warning' : 'bg-success'
-        }`} />
-        {label}
-      </span>
-      {hasCCe && (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-info-subtle text-info-text" title="Carta de Correção">
-          CC-e
-        </span>
-      )}
-    </span>
+          <span className="inline-flex items-center gap-1">
+            {label ? (
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                isCancelled ? 'bg-destructive-subtle text-destructive-text'
+                : isDenied ? 'bg-warning-subtle text-warning-text'
+                : 'bg-success-subtle text-success-text'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  isCancelled ? 'bg-destructive' : isDenied ? 'bg-warning' : 'bg-success'
+                }`} />
+                {label}
+              </span>
+            ) : (
+              <span className="text-muted-foreground/60">—</span>
+            )}
+            {hasCCe && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-info-subtle text-info-text" title="Carta de Correção">
+                CC-e
+              </span>
+            )}
+          </span>
         )
       }
       case 'statusAnalise': {
         const sa = inv.status_analise
         if (!sa) return <span className="text-muted-foreground">-</span>
         return <StatusBadge status={sa} />
+      }
+      case 'erroGrave': {
+        if (!inv.categoria_erro_grave) return <span className="text-muted-foreground/60">-</span>
+        return (
+          <span title={inv.categoria_erro_grave}>
+            <StatusBadge status="ERRO_GRAVE" />
+          </span>
+        )
       }
       case 'oportunidades': {
         const count = inv.oportunidades_count || 0
@@ -1050,6 +1193,17 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         if (!conf) return <span className="text-muted-foreground">-</span>
         return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${conf.cls}`}>{conf.label}</span>
       }
+      case 'escrituracaoNfts': {
+        // Robô de NFTS declarou a nota na prefeitura (write-back). Data no
+        // title para auditoria rápida sem abrir a nota.
+        if (!inv.escriturada_autopilot_em) return <span className="text-muted-foreground/60">-</span>
+        const dtNfts = new Date(inv.escriturada_autopilot_em).toLocaleDateString('pt-BR')
+        return (
+          <span title={`Declarada na prefeitura em ${dtNfts}`}>
+            <StatusBadge status="ESCRITURADA_NFTS" />
+          </span>
+        )
+      }
       case 'integracaoApi': {
         if (!inv.integrado_api_em) return <span className="text-neutral-300">-</span>
         const dtInteg = new Date(inv.integrado_api_em)
@@ -1064,18 +1218,65 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       default:
         return inv[colId] || '-'
     }
-  }
+  }, [companiesById, companyName, refetch])
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {/* Título — a navegação entre sub-telas (tipo/direção) agora vive na
-          sidebar (ver Sidebar.jsx: Notas Fiscais / CTE / NFC). */}
-      <div className="px-6 py-4 border-b border-border">
-        <h1 className="text-xl font-semibold text-foreground">{activeCfg.label}</h1>
+          sidebar (ver Sidebar.jsx: Notas Fiscais / CTE / NFC). As abas extras
+          do oficial (Parâmetros da empresa / Revisões Exportação) ficam numa
+          faixa de abas à direita, só no módulo Notas Fiscais. */}
+      <div className="px-6 py-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold text-foreground">
+          {isCustomTab ? CUSTOM_TABS[customTab].label : activeCfg.label}
+        </h1>
+        {showCustomTabs && (
+          <Tabs
+            value={customTab ?? NOTAS_TAB_VALUE}
+            onValueChange={(v) => {
+              if (v === NOTAS_TAB_VALUE) {
+                setCustomTabLocal(null)
+                // Se a aba extra veio via `activeTab` (sidebar), volta pra sub-tela padrão.
+                if (CUSTOM_TABS[activeTab]) setActiveTab(DEFAULT_TAB)
+              } else {
+                setCustomTabLocal(v)
+              }
+              setStatusAnaliseFilter('')
+            }}
+          >
+            <TabsList variant="default">
+              <TabsTrigger value={NOTAS_TAB_VALUE}>Notas</TabsTrigger>
+              {Object.entries(CUSTOM_TABS).map(([id, t]) => (
+                <TabsTrigger key={id} value={id} className="gap-1.5">
+                  {t.label}
+                  {t.isNew && <Badge variant="info" className="text-[10px] uppercase leading-none px-1.5 py-0.5">Nova</Badge>}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        )}
       </div>
 
-      {/* Toolbar — single row: filters left, action icons right */}
-      <div className="px-6 py-3 border-b border-border">
+      {customTab === 'PARAMETROS_EMPRESA' ? (
+        <div className="flex-1 overflow-auto bg-muted/50">
+          <TributacaoServicosTab
+            companies={companies}
+            initialCompanyId={selectedCompanyIds[0]}
+            onCompanyChange={(id) => setSelectedCompanyIds(id ? [id] : [])}
+            onOpenInvoice={onRowClick}
+          />
+        </div>
+      ) : customTab === 'REVISOES_EXPORTACAO' ? (
+        <div className="flex-1 overflow-auto bg-muted/50">
+          <RevisoesExportacaoVisaoGeral
+            companies={companies}
+            initialCompanyId={selectedCompanyIds[0]}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Toolbar — single row: filters left, action icons right */}
+          <div className="px-6 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           {/* Search */}
           <div className="relative w-56">
@@ -1116,15 +1317,14 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
                       type="text"
                       value={companySearch}
                       onChange={(e) => setCompanySearch(e.target.value)}
-                      placeholder="Buscar empresa..."
+                      placeholder="Buscar por nome ou CNPJ..."
                       className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
                       autoFocus
                     />
                   </div>
                 </div>
                 <div className="overflow-auto py-1 flex-1">
-                  {sortedCompanies
-                    .filter((c) => !companySearch || c.razao_social?.toLowerCase().includes(companySearch.toLowerCase()))
+                  {visibleCompanies
                     .map((c) => (
                     <label
                       key={c.id}
@@ -1137,7 +1337,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
                       <span className="truncate text-foreground/80">{c.razao_social}</span>
                     </label>
                   ))}
-                  {sortedCompanies.filter((c) => !companySearch || c.razao_social?.toLowerCase().includes(companySearch.toLowerCase())).length === 0 && (
+                  {visibleCompanies.length === 0 && (
                     <div className="px-4 py-3 text-sm text-muted-foreground">
                       {sortedCompanies.length === 0 ? 'Carregando...' : 'Nenhuma empresa encontrada'}
                     </div>
@@ -1224,12 +1424,6 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
             {batchResult && !batchResult.success && !batchRunning && (
               <span className="text-xs text-destructive-text truncate max-w-36" title={batchResult.error}>Erro</span>
             )}
-            {reprocessProgress && (
-              <span className="flex items-center gap-2 text-xs text-primary font-medium">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Motor rodando...
-              </span>
-            )}
             {approveResult?.success && (
               <span className="text-xs text-success-text flex items-center gap-1">
                 <Check className="w-3 h-3" />{approveResult.count}
@@ -1269,24 +1463,15 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
                 </span>
               </Button>
             )}
-            <Select value={exportTipo || SELECT_ALL_VALUE} onValueChange={(v) => setExportTipo(v === SELECT_ALL_VALUE ? '' : v)}>
-              <SelectTrigger className="h-8 text-sm w-auto" title="Segregação da extração (Emitidas x Recebidas) — período vem dos filtros de data acima">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={SELECT_ALL_VALUE}>Todos os tipos</SelectItem>
-                {/* Valor da API continua 'entrada'/'saida' — só o rótulo virou
-                    Emitidas/Recebidas pra bater com a nomenclatura da segregação
-                    (pedido da Eliz: extração separada por Emitidas x Recebidas). */}
-                <SelectItem value="entrada">Recebidas</SelectItem>
-                <SelectItem value="saida">Emitidas</SelectItem>
-                <SelectItem value="servico">Serviços</SelectItem>
-                <SelectItem value="cte">CT-e</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Export segue o escopo da sub-tela ativa (oficial, decisão operação
+                16/07 — select de tipo removido): direção vem do ind_emit da aba
+                (Emitidas/Recebidas). NFS-e tomados → modelo Unecont (UNE2-01,
+                rodada 10/09: Resumo + Detalhe). */}
             <Button
-              onClick={handleExportExcel}
-              title={`Exportar Excel${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+              onClick={useUnecontExport ? () => startExportExcel('unecont') : handleExportExcel}
+              title={useUnecontExport
+                ? `Exportar Excel (modelo Unecont: Resumo + Detalhe)${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`
+                : `Exportar Excel${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
               variant="outline"
               size="sm"
               className="group gap-0 hover:gap-1.5"
@@ -1324,18 +1509,23 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
                 </span>
               </Button>
             )}
-            <Button
-              onClick={() => setShowReprocessModal(true)}
-              disabled={!!reprocessProgress}
-              title="Reprocessar Motor"
-              size="sm"
-              className="group gap-0 hover:gap-1.5"
-            >
-              <Play className={`w-4 h-4 shrink-0 ${reprocessProgress ? 'animate-pulse' : ''}`} />
-              <span className={EXPAND_LABEL_CLS}>
-                Reprocessar
-              </span>
-            </Button>
+            {isFiscalAdm && selectedIds.size > 0 && (
+              <Button
+                onClick={() => setRevogandoPrecedentes([...selectedIds])}
+                disabled={selectedIds.size > REVOGAR_PRECEDENTES_MAX}
+                title={selectedIds.size > REVOGAR_PRECEDENTES_MAX
+                  ? `Selecione no máximo ${REVOGAR_PRECEDENTES_MAX} notas para revogar precedentes`
+                  : `Revogar precedentes (${selectedIds.size})`}
+                variant="outline"
+                size="sm"
+                className="group gap-0 hover:gap-1.5 text-warning-text border-warning-border hover:bg-warning-subtle hover:text-warning-text"
+              >
+                <RotateCcw className="w-4 h-4 shrink-0" />
+                <span className="max-w-0 overflow-hidden group-hover:max-w-56 transition-all duration-200 whitespace-nowrap">
+                  Revogar precedentes ({selectedIds.size})
+                </span>
+              </Button>
+            )}
             <Button
               onClick={() => setIsConfigOpen(true)}
               title="Configurar Colunas"
@@ -1377,6 +1567,70 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         </div>
       )}
 
+      {/* Column filters — moved up from inside the table header (was a sticky
+          row nested in TableHeader) so all filters live together at the top
+          of the screen instead of scrolling with the list. */}
+      {visibleColumns.some((col) => !nonFilterableColumns.has(col.id)) && (
+        <div className="px-6 py-2.5 border-b border-border bg-muted/40 flex flex-wrap items-center gap-2">
+          <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          {visibleColumns.map((col) => {
+            if (nonFilterableColumns.has(col.id)) return null
+            return (
+              <div key={`filter-${col.id}`} className="w-40 shrink-0">
+                {col.id === 'statusAnalise' ? (
+                  <Select
+                    value={statusAnaliseFilter || SELECT_ALL_VALUE}
+                    onValueChange={(v) => setStatusAnaliseFilter(v === SELECT_ALL_VALUE ? '' : v)}
+                  >
+                    <SelectTrigger className="w-full h-8 text-xs bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableStatusAnaliseOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : selectFilterColumns.has(col.id) ? (
+                  <Select
+                    value={columnFilters[col.id] || SELECT_ALL_VALUE}
+                    onValueChange={(v) => setColumnFilters((prev) => ({ ...prev, [col.id]: v === SELECT_ALL_VALUE ? '' : v }))}
+                  >
+                    <SelectTrigger className="w-full h-8 text-xs bg-card">
+                      <SelectValue placeholder={col.label} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(col.id === 'escrituracaoStatus' ? ESCRITURACAO_STATUS_OPTIONS : col.id === 'integracaoApi' ? INTEGRACAO_API_OPTIONS : col.id === 'erroGrave' ? ERRO_GRAVE_OPTIONS : col.id === 'statusNfe' ? STATUS_NFE_OPTIONS : availableStatusOptions).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : dateColumnIds.has(col.id) ? (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={`${col.label} (dd/mm/aaaa)`}
+                      value={columnFilters[col.id] || ''}
+                      onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                      className="w-full border border-input rounded pl-2 pr-7 py-1.5 text-xs bg-card"
+                    />
+                    <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder={col.label}
+                    value={columnFilters[col.id] || ''}
+                    onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                    className="w-full border border-input rounded px-2 py-1.5 text-xs bg-card"
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Quick status filter bar */}
       <div className="px-6 py-2.5 border-b border-border flex items-center gap-1.5">
   {[
@@ -1404,7 +1658,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
       {/* Table */}
       <div className="flex-1 overflow-auto relative z-0 px-6 pt-4 pb-6">
-        {!currentType ? (
+        {!currentCodMod ? (
           <div className="flex items-center justify-center h-64 text-muted-foreground m-4">
             Nenhum dado disponível para esta aba
           </div>
@@ -1413,11 +1667,11 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
             <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mr-3" />
             Carregando notas...
           </div>
-        ) : allInvoices.length === 0 ? (
-          <div className="flex items-center justify-center h-64 text-muted-foreground m-4">
-            Nenhuma nota encontrada
-          </div>
         ) : (
+          // Zero linhas NÃO troca a tabela por um aviso (oficial, Célula 24/09
+          // item 3.1): o cabeçalho fica na tela e o estado vazio vai para o
+          // corpo da tabela — os filtros de coluna (painel acima) seguem
+          // visíveis com o valor digitado.
           <Table className="min-w-full divide-y divide-border text-sm">
               <TableHeader className="bg-muted">
                 {/* Main Headers */}
@@ -1437,67 +1691,6 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
                         {col.label}
                         <MoreVertical className="w-4 h-4 text-muted-foreground shrink-0 cursor-pointer" />
                       </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-                {/* Filter Row — top-[45px] intentionally kept: pixel offset matching the
-                    header row's own rendered height for sticky positioning, not a
-                    spacing/typography token. */}
-                <TableRow className="bg-muted border-t border-border">
-                  <TableHead className="px-4 py-2 h-auto sticky left-0 top-[45px] bg-muted border-r border-border z-30 shadow-md" />
-                  {visibleColumns.map((col) => (
-                    <TableHead key={`filter-${col.id}`} className="px-4 py-2 h-auto border-r border-border sticky top-[45px] bg-muted z-20 min-w-36">
-                      {nonFilterableColumns.has(col.id) ? null : col.id === 'statusAnalise' ? (
-                        <Select
-                          value={statusAnaliseFilter || SELECT_ALL_VALUE}
-                          onValueChange={(v) => setStatusAnaliseFilter(v === SELECT_ALL_VALUE ? '' : v)}
-                        >
-                          <SelectTrigger className="w-full h-auto py-1 text-xs bg-card">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableStatusAnaliseOptions.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : selectFilterColumns.has(col.id) ? (
-                        <Select
-                          value={columnFilters[col.id] || SELECT_ALL_VALUE}
-                          onValueChange={(v) => setColumnFilters((prev) => ({ ...prev, [col.id]: v === SELECT_ALL_VALUE ? '' : v }))}
-                        >
-                          <SelectTrigger className="w-full h-auto py-1 text-xs bg-card">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(col.id === 'escrituracaoStatus' ? ESCRITURACAO_STATUS_OPTIONS : col.id === 'integracaoApi' ? INTEGRACAO_API_OPTIONS : availableStatusOptions).map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : dateColumnIds.has(col.id) ? (
-                        <div className="relative">
-                          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                          <input
-                            type="text"
-                            placeholder="dd/mm/aaaa"
-                            value={columnFilters[col.id] || ''}
-                            onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
-                            className="w-full border border-input rounded pl-6 pr-8 py-1 text-xs"
-                          />
-                          <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                        </div>
-                      ) : (
-                        <>
-                          <input
-                            type="text"
-                            value={columnFilters[col.id] || ''}
-                            onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
-                            className="w-full border border-input rounded px-2 py-1 text-xs pr-6"
-                          />
-                          <Filter className="absolute right-6 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground cursor-pointer" />
-                        </>
-                      )}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -1581,6 +1774,8 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         onPageChange={setPage}
         onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
       />
+        </>
+      )}
 
       {/* Invoice Sheet (side panel) */}
       <InvoiceSheet
@@ -1590,24 +1785,6 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         onViewDetails={(inv) => { setSheetInvoice(null); onRowClick(inv) }}
       />
 
-      {/* Reprocess Modal (confirm → processing → results) */}
-      <ReprocessingModal
-        isOpen={showReprocessModal || !!reprocessProgress}
-        onClose={() => {
-          setShowReprocessModal(false)
-          setReprocessProgress(null)
-          refetch()
-        }}
-        onConfirm={handleReprocessConfirmed}
-        progress={reprocessProgress}
-        companies={
-          selectedCompanyIds.length > 0
-            ? `${selectedCompanyIds.length} empresa(s) selecionada(s)`
-            : 'Todas as empresas'
-        }
-        startDate={startDate}
-        endDate={endDate}
-      />
 
       {/* Export XLSX (async S3) — modal de progresso */}
       <ExportProgressModal
@@ -1616,6 +1793,12 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
           try { localStorage.removeItem('bhules_export_job_id') } catch { /* ignore */ }
           setExportJob(null)
         }}
+      />
+
+      <RevokePrecedentesNotasModal
+        invoiceIds={revogandoPrecedentes}
+        onClose={() => setRevogandoPrecedentes(null)}
+        onRevoked={() => { setRevogandoPrecedentes(null); setSelectedIds(new Set()) }}
       />
 
       {/* Column Config Drawer */}

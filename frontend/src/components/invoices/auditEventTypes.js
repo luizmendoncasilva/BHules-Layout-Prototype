@@ -7,12 +7,28 @@ import {
   FileEdit,
   Lock,
   LockOpen,
+  Pencil,
   Play,
   ThumbsDown,
   ThumbsUp,
   Trash2,
   Undo2,
 } from 'lucide-react'
+
+// Rótulos de campo pro diff de correções — mesmo domínio de
+// BatchAnalysis.jsx (CAMPO_LABELS), mantido à parte pra não acoplar os
+// dois módulos por um mapa que é só apresentação.
+const FIELD_LABELS = {
+  cfop: 'CFOP',
+  cst_icms: 'CST ICMS',
+  iss_retido: 'ISS Retido',
+  aliquota_iss: 'Alíquota ISS',
+  codigo_servico: 'Cód. Serviço',
+}
+
+function displayField(campo) {
+  return FIELD_LABELS[campo] || campo
+}
 
 // Aliases de exibição para api_source — evita expor o nome interno do
 // orquestrador (RESTATE) e mostra termos do domínio fiscal.
@@ -27,12 +43,24 @@ export function displaySource(apiSource) {
 }
 
 const ACTOR_LABELS = {
-  chupacabra: 'integrador',
+  chupacabra: 'Integrador de Notas',
 }
 
 export function displayActor(actor) {
   if (!actor) return actor
   return ACTOR_LABELS[actor] ?? actor
+}
+
+// Filtro "Quem" casa com o actor gravado (ilike no backend). Se o texto
+// digitado é o começo de um alias exibido (ex.: "Integrador"), manda o nome
+// gravado — senão a busca pelo que aparece na tela volta vazia.
+export function actorFilterValue(text) {
+  const t = text?.trim().toLowerCase()
+  if (!t || t.length < 3) return text
+  const hit = Object.entries(ACTOR_LABELS).find(([, label]) =>
+    label.toLowerCase().startsWith(t)
+  )
+  return hit ? hit[0] : text
 }
 
 // Mapa event_type → apresentação. Centraliza copy + ícone num só lugar.
@@ -57,6 +85,11 @@ export const AUDIT_EVENT_TYPES = {
     icon: Bot,
     label: 'Auto-aprovação publicada',
     format: (p) => (p?.document_type ? p.document_type : null),
+  },
+  'invoice.nfse.liberacao_publicada': {
+    icon: Bot,
+    label: 'Liberação de NFS-e publicada',
+    format: (p) => (p?.status_analise ? `${p.status_analise}${p.correlation_id ? ` · ${p.correlation_id}` : ''}` : null),
   },
   'invoice.feedback.upvote': {
     icon: ThumbsUp,
@@ -114,6 +147,21 @@ export const AUDIT_EVENT_TYPES = {
     icon: AlertTriangle,
     label: 'Problema relatado',
     format: (p) => p?.comment || null,
+  },
+  'invoice.override.submitted': {
+    icon: Pencil,
+    label: 'Correção de classificação',
+    format: (p) => {
+      if (!p?.changes || p.changes.length === 0) return null
+      return p.changes
+        .map((c) => `${displayField(c.campo)}: ${c.valor_antigo ?? '—'} → ${c.valor_novo ?? '—'}`)
+        .join(' · ')
+    },
+  },
+  'invoice.learning.corrected': {
+    icon: FileEdit,
+    label: 'Aprendizado corrigido',
+    format: (p) => p?.motivo || null,
   },
 }
 

@@ -7,6 +7,7 @@
 
 import html2pdf from 'html2pdf.js'
 import { api } from '../api/client'
+import { FINALIDADE_LABELS } from '../constants/finalidades'
 
 // O PDF é montado como uma string de HTML renderizada fora da árvore React
 // (html2pdf.js captura um <div> desconectado do documento), então não dá
@@ -79,7 +80,7 @@ async function generateInvoicePdf(invoice) {
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${it.ncm || '-'}</td>
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${it.cfop_emitente || '-'}</td>
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};text-align:right;">${formatCurrency(it.vl_item)}</td>
-        <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${sug.finalidade || '-'}</td>
+        <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${escapeHtml(FINALIDADE_LABELS[sug.finalidade] || sug.finalidade || '-')}</td>
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${sug.cfop_entrada || '-'}</td>
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};font-family:monospace;">${sug.cst_icms_entrada || '-'}</td>
         <td style="padding:3px 5px;border:1px solid ${PDF_COLORS.border};text-align:right;">${formatCurrency(sug.credito_icms?.valor)}</td>

@@ -4,7 +4,7 @@ import {
   Scale, FileText, Database, UserPlus, Cloud,
   Layers, Settings2, Stethoscope, Coins, FileStack, PieChart, History, Gavel,
   ChevronsLeft, ChevronsRight, ChevronDown, ScrollText, Landmark, BarChart3, Activity,
-  Truck, ShoppingCart,
+  Truck, ShoppingCart, ClipboardCheck, ListChecks, BookOpenCheck,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { IconButton, Tooltip, TooltipTrigger, TooltipContent } from '@bhubai/bhub-design-system'
@@ -304,6 +304,12 @@ export default function Sidebar({ currentView, subViews = {}, onNavigate }) {
           onNavigate={onNavigate} setExpanded={setExpanded}
         />
 
+        {/* NFS-e — Dashboard + Conferência (worklist de falso-negativo) */}
+        <NavItem expanded={expanded} icon={ClipboardCheck} label="NFS-e — Dashboard e Conferência" isActive={currentView === 'nfse'} onClick={() => onNavigate?.('nfse')} />
+
+        {/* Fila DIFAL-SN (RN-25) — vereditos da Célula sobre o DIFAL do Simples */}
+        <NavItem expanded={expanded} icon={ListChecks} label="Fila DIFAL-SN" isActive={currentView === 'difal-fila'} onClick={() => onNavigate?.('difal-fila')} />
+
         <ExpandableNavItem
           icon={Scale} label="Legislação" view="crawler" tabs={CRAWLER_TABS}
           currentView={currentView} subView={subViews.crawler} expanded={expanded}
@@ -318,19 +324,20 @@ export default function Sidebar({ currentView, subViews = {}, onNavigate }) {
           onNavigate={onNavigate} setExpanded={setExpanded}
         />
 
-        <ExpandableNavItem
-          icon={PieChart} label="BHub Tax" view="bhubtax" tabs={BHUBTAX_TABS}
-          currentView={currentView} subView={subViews.bhubtax} expanded={expanded}
-          onNavigate={onNavigate} setExpanded={setExpanded}
-        />
+        {/* BHub Tax — desabilitado em 24/09/2026 a pedido da operação (igual ao
+            oficial). A view `bhubtax` continua no App.jsx; para religar, voltar
+            o ExpandableNavItem com view="bhubtax" e tabs={BHUBTAX_TABS}. */}
 
         <NavItem expanded={expanded} icon={History} label="Auditoria" isActive={currentView === 'audit'} onClick={() => onNavigate?.('audit')} />
+
+        {/* Regras DIFAL-SN — leitura do Rule Pack com o gate de ativação (DV5-11) */}
+        <NavItem expanded={expanded} icon={BookOpenCheck} label="Regras DIFAL-SN" isActive={currentView === 'difal-regras'} onClick={() => onNavigate?.('difal-regras')} />
 
         {isFiscalAdm && (
           <>
             <Divider />
-            <NavItem expanded={expanded} icon={Stethoscope} label="Diagnóstico Fiscal" isActive={currentView === 'diagnosis'} onClick={() => onNavigate?.('diagnosis')} />
-            <NavItem expanded={expanded} icon={Coins} label="Recuperação de Créditos" isActive={currentView === 'recovery'} onClick={() => onNavigate?.('recovery')} />
+            {/* Diagnóstico Fiscal e Recuperação de Créditos saíram do menu no
+                oficial (#716) — as views seguem no App.jsx. */}
             <NavItem expanded={expanded} icon={Cloud} label="Captura de Notas" isActive={currentView === 'capture'} onClick={() => onNavigate?.('capture')} />
             <NavItem expanded={expanded} icon={UserPlus} label="Habilitar Clientes" isActive={currentView === 'onboarding'} onClick={() => onNavigate?.('onboarding')} />
             <NavItem expanded={expanded} icon={Settings2} label="Regras CFOP" isActive={currentView === 'cfop-rules'} onClick={() => onNavigate?.('cfop-rules')} />

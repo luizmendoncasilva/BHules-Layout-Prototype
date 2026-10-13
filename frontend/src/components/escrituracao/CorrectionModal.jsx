@@ -1,76 +1,20 @@
 import { useState } from 'react'
-import { Send } from 'lucide-react'
+import { Send, AlertTriangle } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
-  Button, Input, Label, Spinner, LoadingButton,
+  Button, Input, Label, Spinner, LoadingButton, Textarea,
   Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectItem,
 } from '@bhubai/bhub-design-system'
-import { CST_ICMS, CSOSN } from '../../constants/classificationOptions'
+import { CST_ICMS, CSOSN_ENTRADA } from '../../constants/classificationOptions'
+import { FINALIDADE_LABELS, getFinalidadesPermitidas } from '../../constants/finalidades'
+import { getCstPisCofinsOptions } from './cstPisCofinsOptions'
 
-const FINALIDADES = [
-  'REVENDA', 'MATERIA_PRIMA', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO',
-  'SERVICO', 'IMPORTACAO', 'DEVOLUCAO', 'RETORNO', 'BONIFICACAO', 'TRANSFERENCIA',
-]
-
-const FINALIDADE_LABELS = {
-  REVENDA: 'Revenda',
-  MATERIA_PRIMA: 'Matéria-prima / Insumo',
-  USO_CONSUMO: 'Uso e consumo',
-  ATIVO_IMOBILIZADO: 'Ativo imobilizado',
-  SERVICO: 'Serviço',
-  IMPORTACAO: 'Importação',
-  DEVOLUCAO: 'Devolução',
-  RETORNO: 'Retorno',
-  BONIFICACAO: 'Bonificação',
-  TRANSFERENCIA: 'Transferência',
-}
-
-// CST PIS/COFINS por regime tributário do destinatário
-const CST_PIS_COFINS_LUCRO_REAL = [
-  { code: '50', desc: 'Com direito a crédito' },
-  { code: '51', desc: 'Com direito a crédito - vinculada receita tributada MI' },
-  { code: '52', desc: 'Com direito a crédito - vinculada receita não tributada MI' },
-  { code: '53', desc: 'Com direito a crédito - vinculada receita tributada e não tributada MI' },
-  { code: '54', desc: 'Com direito a crédito - vinculada receita tributada exportação' },
-  { code: '55', desc: 'Com direito a crédito - vinculada receita não tributada exportação' },
-  { code: '56', desc: 'Com direito a crédito - vinculada receita tributada e não tributada exportação' },
-  { code: '60', desc: 'Crédito presumido - operação de aquisição vinculada receita tributada MI' },
-  { code: '61', desc: 'Crédito presumido - vinculada receita não tributada MI' },
-  { code: '62', desc: 'Crédito presumido - vinculada receita exportação' },
-  { code: '63', desc: 'Crédito presumido - vinculada receita tributada e não tributada MI' },
-  { code: '70', desc: 'Sem direito a crédito' },
-  { code: '71', desc: 'Sem direito a crédito - vinculada a receita isenta' },
-  { code: '72', desc: 'Sem direito a crédito - operação com suspensão' },
-  { code: '73', desc: 'Sem direito a crédito - operação com alíquota zero' },
-  { code: '74', desc: 'Sem direito a crédito - operação sem incidência' },
-  { code: '75', desc: 'Sem direito a crédito - operação por ST' },
-  { code: '98', desc: 'Outras operações de entrada' },
-  { code: '99', desc: 'Outras operações' },
-]
-
-const CST_PIS_COFINS_PRESUMIDO = [
-  { code: '70', desc: 'Sem direito a crédito' },
-  { code: '71', desc: 'Sem direito a crédito - vinculada a receita isenta' },
-  { code: '72', desc: 'Sem direito a crédito - operação com suspensão' },
-  { code: '73', desc: 'Sem direito a crédito - operação com alíquota zero' },
-  { code: '74', desc: 'Sem direito a crédito - operação sem incidência' },
-  { code: '75', desc: 'Sem direito a crédito - operação por ST' },
-  { code: '98', desc: 'Outras operações de entrada' },
-  { code: '99', desc: 'Outras operações' },
-]
-
-const CST_PIS_COFINS_SIMPLES = [
-  { code: '98', desc: 'Outras operações de entrada' },
-  { code: '99', desc: 'Outras operações' },
-]
-
-function getCstPisCofinsOptions(regime) {
-  if (regime === 'SIMPLES' || regime === 'MEI') return CST_PIS_COFINS_SIMPLES
-  if (regime === 'PRESUMIDO') return CST_PIS_COFINS_PRESUMIDO
-  return CST_PIS_COFINS_LUCRO_REAL
-}
-
-export default function CorrectionModal({ item, onClose, onSubmit, regimeTributario }) {
+export default function CorrectionModal({ item, onClose, onSubmit, regimeTributario, naoContribuinte = false, modo = 'correcao' }) {
+  // modo="aprendizado" (PQC-10, Q2): nota já enviada ao Onvio. Só o que o motor
+  // aprende muda — nada é reenviado. Exige motivo; onSubmit recebe (itemId, correcoes, motivo).
+  const aprendizado = modo === 'aprendizado'
+  const [motivo, setMotivo] = useState('')
+  const finalidadesPermitidas = getFinalidadesPermitidas(naoContribuinte)
   const [finalidade, setFinalidade] = useState(item.finalidade || '')
   const [cfop, setCfop] = useState(item.cfop_entrada || '')
   const [cstIcms, setCstIcms] = useState(item.cst_icms_entrada || '')
@@ -81,29 +25,41 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
   )
   const [submitting, setSubmitting] = useState(false)
 
-  const hasChanges =
-    finalidade !== item.finalidade ||
-    cfop !== (item.cfop_entrada || '') ||
-    cstIcms !== (item.cst_icms_entrada || '') ||
-    cstPis !== (item.cst_pis_entrada || '') ||
-    cstCofins !== (item.cst_cofins_entrada || '') ||
-    aliqIcms !== (item.credito_icms?.aliquota != null ? String(Number(item.credito_icms.aliquota)) : '')
+  const mudouFinalidade = finalidade !== item.finalidade
+  const mudouCfop = cfop !== (item.cfop_entrada || '')
+  const mudouCstIcms = cstIcms !== (item.cst_icms_entrada || '')
+  const mudouAprendido = mudouFinalidade || mudouCfop || mudouCstIcms
+  const hasChanges = aprendizado
+    ? mudouAprendido
+    : (
+      mudouAprendido ||
+      cstPis !== (item.cst_pis_entrada || '') ||
+      cstCofins !== (item.cst_cofins_entrada || '') ||
+      aliqIcms !== (item.credito_icms?.aliquota != null ? String(Number(item.credito_icms.aliquota)) : '')
+    )
+
+  const motivoOk = !aprendizado || motivo.trim().length > 0
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!hasChanges) return
+    if (!hasChanges || !motivoOk) return
     setSubmitting(true)
     const correcoes = {}
     if (finalidade !== item.finalidade) correcoes.finalidade = finalidade
     if (cfop !== (item.cfop_entrada || '')) correcoes.cfop_entrada = cfop
     if (cstIcms !== (item.cst_icms_entrada || '')) correcoes.cst_icms = cstIcms
-    if (cstPis !== (item.cst_pis_entrada || '')) correcoes.cst_pis = cstPis
-    if (cstCofins !== (item.cst_cofins_entrada || '')) correcoes.cst_cofins = cstCofins
-    if (aliqIcms !== (item.credito_icms?.aliquota != null ? String(Number(item.credito_icms.aliquota)) : '')) {
-      correcoes.aliq_icms = aliqIcms ? Number(aliqIcms) : 0
+    // Aprendizado: a próxima nota só lê finalidade, CFOP de entrada e CST ICMS.
+    // PIS, COFINS e alíquota revogariam o precedente sem substituir o valor.
+    if (!aprendizado) {
+      if (cstPis !== (item.cst_pis_entrada || '')) correcoes.cst_pis = cstPis
+      if (cstCofins !== (item.cst_cofins_entrada || '')) correcoes.cst_cofins = cstCofins
+      if (aliqIcms !== (item.credito_icms?.aliquota != null ? String(Number(item.credito_icms.aliquota)) : '')) {
+        correcoes.aliq_icms = aliqIcms ? Number(aliqIcms) : 0
+      }
     }
     try {
-      await onSubmit(item.invoice_item_id, correcoes)
+      if (aprendizado) await onSubmit(item.invoice_item_id, correcoes, motivo.trim())
+      else await onSubmit(item.invoice_item_id, correcoes)
     } finally {
       setSubmitting(false)
     }
@@ -122,16 +78,28 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
         {submitting && (
           <div className="absolute inset-0 bg-card/80 z-10 flex flex-col items-center justify-center">
             <Spinner size="xl" className="text-primary mb-3" />
-            <p className="text-sm text-foreground font-medium">Enviando correção...</p>
-            <p className="text-xs text-muted-foreground mt-1">Aguarde, o motor está reprocessando.</p>
+            <p className="text-sm text-foreground font-medium">{aprendizado ? 'Gravando aprendizado...' : 'Enviando correção...'}</p>
+            <p className="text-xs text-muted-foreground mt-1">{aprendizado ? 'A nota não é reprocessada nem reenviada.' : 'Aguarde, o motor está reprocessando.'}</p>
           </div>
         )}
 
         <SheetHeader className="border-b border-border">
-          <SheetTitle className="text-xl font-semibold">Corrigir Item #{item.num_item}</SheetTitle>
+          <SheetTitle className="text-xl font-semibold">{aprendizado ? 'Corrigir aprendizado' : 'Corrigir'} Item #{item.num_item}</SheetTitle>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+          {/* Aprendizado: a nota já foi ao Onvio e fica como está. */}
+          {aprendizado && (
+            <div className="flex items-start gap-2 bg-warning-subtle border border-warning-border rounded-lg px-3 py-2.5">
+              <AlertTriangle className="w-4 h-4 text-warning-text flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-warning-text">
+                Esta nota <strong>já foi enviada ao Onvio</strong>. Corrigir o aprendizado <strong>não altera a nota nem
+                reenvia à Domínio</strong>: revoga o precedente e grava o tratamento correto para as
+                <strong> próximas notas deste fornecedor e CFOP</strong>. O motor aprende finalidade,
+                CFOP de entrada e CST ICMS. CST PIS, CST COFINS e alíquota ainda não entram neste caminho.
+              </p>
+            </div>
+          )}
           {/* Context */}
           <div className="bg-muted rounded-lg p-3 text-sm text-muted-foreground">
             <p className="font-medium text-foreground truncate">{item.descricao || `Item ${item.num_item}`}</p>
@@ -149,7 +117,7 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                {FINALIDADES.map((f) => (
+                {finalidadesPermitidas.map((f) => (
                   <SelectItem key={f} value={f}>{FINALIDADE_LABELS[f] || f}</SelectItem>
                 ))}
               </SelectContent>
@@ -179,7 +147,7 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
               )}
             </div>
 
-            <div>
+            {!aprendizado && <div>
               <Label htmlFor="correction-aliq-icms" className="block mb-1">Aliq. ICMS (%)</Label>
               <Input
                 id="correction-aliq-icms"
@@ -192,7 +160,7 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
                 placeholder="Ex: 18, 12, 7"
                 className="font-mono"
               />
-            </div>
+            </div>}
           </div>
 
           {/* CST/CSOSN ICMS */}
@@ -213,7 +181,7 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
                 </SelectGroup>
                 <SelectGroup>
                   <SelectLabel>CSOSN (Simples Nacional)</SelectLabel>
-                  {CSOSN.map((o) => (
+                  {CSOSN_ENTRADA.map((o) => (
                     <SelectItem key={`csosn-${o.code}`} value={o.code}>{o.code} - {o.description}</SelectItem>
                   ))}
                 </SelectGroup>
@@ -224,8 +192,8 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
             )}
           </div>
 
-          {/* CST PIS + COFINS side by side */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* CST PIS + COFINS: a correção comum grava na nota. No aprendizado a próxima nota não lê esses CST. */}
+          {!aprendizado && <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="block mb-1">CST PIS</Label>
               <Select value={cstPis} onValueChange={setCstPis}>
@@ -259,7 +227,20 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
                 <p className="text-xs text-warning-text mt-1">Motor: {item.cst_cofins_entrada}</p>
               )}
             </div>
-          </div>
+          </div>}
+
+          {aprendizado && (
+            <div>
+              <Label htmlFor="correction-motivo" className="block mb-1">Motivo <span className="text-destructive-text">*</span></Label>
+              <Textarea
+                id="correction-motivo"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                rows={2}
+                placeholder="ex: 6102 é revenda, não industrialização — Célula 25/09"
+              />
+            </div>
+          )}
 
           <div className="sticky bottom-0 -mx-6 mt-4 px-6 py-4 bg-card border-t border-border flex justify-end gap-2">
             <Button
@@ -273,10 +254,11 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
             <LoadingButton
               type="submit"
               loading={submitting}
-              loadingText="Enviando..."
-              disabled={!hasChanges}
+              loadingText={aprendizado ? 'Gravando...' : 'Enviando...'}
+              disabled={!hasChanges || !motivoOk}
+              title={!hasChanges ? 'Altere ao menos um campo' : (!motivoOk ? 'Informe o motivo' : undefined)}
             >
-              <Send className="w-3.5 h-3.5" />Enviar Correcao
+              <Send className="w-3.5 h-3.5" />{aprendizado ? 'Corrigir aprendizado' : 'Enviar Correcao'}
             </LoadingButton>
           </div>
         </form>

@@ -1,8 +1,8 @@
 // TAILWIND-SCAN-TEST bg-fuchsia-950 text-fuchsia-950
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Toaster } from '@bhubai/bhub-design-system'
 import { useAuth } from './auth/useAuth'
-import { useHasRole, ROLE_FISCAL_ADM } from './auth/roles'
+import { useHasRole, useHasAnyRole, ROLE_FISCAL_ADM, ROLE_FISCAL_OPERATOR } from './auth/roles'
 import { CompanyProvider } from './context/CompanyContext'
 import { ToastProvider } from './components/shared/Toast'
 import LoginPage from './auth/LoginPage'
@@ -15,6 +15,8 @@ import TaxTableAlertsPanel from './components/legislation/TaxTableAlertsPanel'
 import SpedManager from './components/sped/SpedManager'
 import ChatWidget from './components/chat/ChatWidget'
 import ExceptionQueue from './components/exceptions/ExceptionQueue'
+import DifalSnFila from './components/difal/DifalSnFila'
+import DifalSnRegras from './components/difal/DifalSnRegras'
 import ClientOnboarding from './components/onboarding/ClientOnboarding'
 import CaptureDashboard from './components/capture/CaptureDashboard'
 import CompanyDiagnosis from './components/diagnosis/CompanyDiagnosis'
@@ -24,23 +26,24 @@ import BatchAnalysis from './components/invoices/BatchAnalysis'
 import CfopOperationRules from './components/rules/CfopOperationRules'
 import BHubTaxDashboard from './components/bhubtax/BHubTaxDashboard'
 import NotasIntegradas from './components/integradas/NotasIntegradas'
+import NfseDashboard from './components/nfse/NfseDashboard'
 import AuditLog from './components/audit/AuditLog'
-
-
-function getDefaultDateRange() {
-  const now = new Date()
-  const end = now.toISOString().slice(0, 10)
-  const start = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().slice(0, 10)
-  return { startDate: start, endDate: end }
-}
+import ErrorBoundary from './components/shared/ErrorBoundary'
+import { getMesCorrenteRange } from './utils/dateRange'
 
 // Views gated by the `fiscal-adms` Auth0 role. Backend enforces the same role
 // on the matching endpoints — this guard is UX defense-in-depth.
 const FISCAL_ADM_VIEWS = new Set(['capture', 'onboarding', 'cfop-rules', 'diagnosis', 'recovery'])
 
+// Telas que ficam montadas escondidas (`hidden`) para preservar filtros/scroll
+// e por isso precisam de montagem preguiçosa (FE-01). As demais já são
+// condicionais em `currentView` — montam e desmontam sozinhas, não entram aqui.
+const LAZY_VIEWS = new Set(['bhubtax', 'integradas', 'nfse', 'batch'])
+
 export default function App() {
   const { isLoading, isAuthenticated, logout } = useAuth()
   const isFiscalAdm = useHasRole(ROLE_FISCAL_ADM)
+  const hasFiscalAccess = useHasAnyRole(ROLE_FISCAL_ADM, ROLE_FISCAL_OPERATOR)
   const [currentView, setCurrentView] = useState('list')
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [previousView, setPreviousView] = useState('list')
@@ -58,10 +61,29 @@ export default function App() {
   })
 
   // Shared filters — persist across views
-  const defaults = getDefaultDateRange()
+  const defaults = getMesCorrenteRange()
   const [sharedStartDate, setSharedStartDate] = useState(defaults.startDate)
   const [sharedEndDate, setSharedEndDate] = useState(defaults.endDate)
   const [sharedCompanyIds, setSharedCompanyIds] = useState([])
+
+  // Montagem preguiçosa das telas pesadas (perf 18/08 — decisão D1 da spec
+  // `perf-painel-listagem-notas`). Antes, BHubTax/Integradas/NFS-e/Batch eram
+  // montadas junto com a ListView e escondidas via `hidden`: as queries delas
+  // rodavam no load e a request da lista entrava na fila HTTP atrás de
+  // `/metrics/bhub-tax` (~10 s). Agora cada tela monta na PRIMEIRA visita e
+  // permanece montada depois — preserva filtros/scroll ao voltar, que é o
+  // comportamento que a operação usa.
+  const [visited, setVisited] = useState(() => new Set())
+  // Marcado no próprio handler de navegação (mesmo lote de estado do
+  // `setCurrentView`), para a tela já sair montada na primeira renderização
+  // depois do clique — sem o render intermediário que um efeito produziria.
+  const markVisited = useCallback((view) => {
+    if (!LAZY_VIEWS.has(view)) return
+    setVisited((prev) => (prev.has(view) ? prev : new Set(prev).add(view)))
+  }, [])
+  // Rede de segurança: qualquer caminho que troque a view sem passar pelo
+  // handler (hoje só `handleBackToList`, que volta para uma view já visitada).
+  useEffect(() => { markVisited(currentView) }, [currentView, markVisited])
 
   if (isLoading) {
     return (
@@ -75,9 +97,9 @@ export default function App() {
     return <LoginPage />
   }
 
-  // Painel BHub Tax restrito ao perfil fiscal (time de validações). Backend
-  // enforce a mesma role nos endpoints; este gate é a barreira de UX.
-  if (!isFiscalAdm) {
+  // Painel BHub Tax restrito ao perfil fiscal (time de validações: admin ou operador).
+  // Backend enforce a mesma role nos endpoints; este gate é a barreira de UX.
+  if (!hasFiscalAccess) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="max-w-md text-center bg-card border border-border rounded-lg p-8 shadow-sm">
@@ -122,6 +144,7 @@ export default function App() {
     if (subView) {
       setSubViews((prev) => ({ ...prev, [view]: subView }))
     }
+    markVisited(view)
     setCurrentView(view)
   }
 
@@ -137,11 +160,14 @@ export default function App() {
         {/* Left Sidebar */}
         <Sidebar currentView={currentView} subViews={subViews} onNavigate={handleNavigate} />
 
-        {/* Main Content */}
+        {/* Main Content — ErrorBoundary: crash de um painel não pode derrubar
+            o console. Vale também para os que seguem montados escondidos
+            depois da 1ª visita (BHubTax, Integradas, NFS-e, Batch). */}
         <div className="flex-1 flex flex-col min-w-0 h-full">
           <AppHeader currentView={currentView} subViews={subViews} onNavigate={handleNavigate} previousView={previousView} selectedInvoice={selectedInvoice} />
 
           <div className="flex-1 min-h-0 flex flex-col">
+          <ErrorBoundary resetKey={currentView}>
           {/* ListView stays mounted (hidden) to preserve filters/scroll — uma
               instância por módulo segregado (Notas Fiscais, CTE, NFC), cada
               uma controlando sua própria sub-tela (activeTab) via subViews. */}
@@ -165,24 +191,40 @@ export default function App() {
           </div>
           {/* BHub Tax — dashboard fiscal (3 sessões + anomalias). Substitui os
               dashboards antigos (Métricas BHules + Operacional), removidos. */}
-          <div className={currentView === 'bhubtax' ? 'flex flex-col h-full' : 'hidden'}>
-            <BHubTaxDashboard activeTab={subViews.bhubtax} onTabChange={(t) => setSubViews((p) => ({ ...p, bhubtax: t }))} />
-          </div>
+          {visited.has('bhubtax') && (
+            <div className={currentView === 'bhubtax' ? 'flex flex-col h-full' : 'hidden'}>
+              <BHubTaxDashboard activeTab={subViews.bhubtax} onTabChange={(t) => setSubViews((p) => ({ ...p, bhubtax: t }))} />
+            </div>
+          )}
           {/* Notas Integradas — visibilidade do dual-write (read-only).
               Disponível a todos os usuários autenticados. */}
-          <div className={currentView === 'integradas' ? 'flex flex-col h-full' : 'hidden'}>
-            <NotasIntegradas activeTab={subViews.integradas} onTabChange={(t) => setSubViews((p) => ({ ...p, integradas: t }))} />
-          </div>
-          <div className={currentView === 'batch' ? 'flex flex-col h-full' : 'hidden'}>
-            <BatchAnalysis onViewInvoice={(invoiceId) => {
-              setPreviousView('batch')
-              setSelectedInvoice({ id: invoiceId })
-              setCurrentView('detail')
-            }}
-              startDate={sharedStartDate} onStartDateChange={setSharedStartDate}
-              endDate={sharedEndDate} onEndDateChange={setSharedEndDate}
-              companyIds={sharedCompanyIds} onCompanyIdsChange={setSharedCompanyIds} />
-          </div>
+          {visited.has('integradas') && (
+            <div className={currentView === 'integradas' ? 'flex flex-col h-full' : 'hidden'}>
+              <NotasIntegradas activeTab={subViews.integradas} onTabChange={(t) => setSubViews((p) => ({ ...p, integradas: t }))} />
+            </div>
+          )}
+          {/* NFS-e — Dashboard + Conferência (worklist direcional de falso-negativo). */}
+          {visited.has('nfse') && (
+            <div className={currentView === 'nfse' ? 'flex flex-col h-full' : 'hidden'}>
+              <NfseDashboard onViewInvoice={(invoiceId) => {
+                setPreviousView('nfse')
+                setSelectedInvoice({ id: invoiceId })
+                setCurrentView('detail')
+              }} />
+            </div>
+          )}
+          {visited.has('batch') && (
+            <div className={currentView === 'batch' ? 'flex flex-col h-full' : 'hidden'}>
+              <BatchAnalysis onViewInvoice={(invoiceId) => {
+                setPreviousView('batch')
+                setSelectedInvoice({ id: invoiceId })
+                setCurrentView('detail')
+              }}
+                startDate={sharedStartDate} onStartDateChange={setSharedStartDate}
+                endDate={sharedEndDate} onEndDateChange={setSharedEndDate}
+                companyIds={sharedCompanyIds} onCompanyIdsChange={setSharedCompanyIds} />
+            </div>
+          )}
           {currentView === 'detail' && (
             <DetailView invoice={selectedInvoice} onBack={handleBackToList} />
           )}
@@ -197,6 +239,15 @@ export default function App() {
           )}
           {currentView === 'exceptions' && (
             <ExceptionQueue />
+          )}
+          {/* Fila DIFAL-SN (RN-25) — a Célula valida nota a nota; mesmo
+              acesso da ExceptionQueue (qualquer usuário autenticado; o POST
+              exige JWT no backend). */}
+          {currentView === 'difal-fila' && (
+            <DifalSnFila />
+          )}
+          {currentView === 'difal-regras' && (
+            <DifalSnRegras />
           )}
           {currentView === 'audit' && (
             <AuditLog />
@@ -219,6 +270,7 @@ export default function App() {
           {isFiscalAdm && currentView === 'cfop-rules' && (
             <CfopOperationRules />
           )}
+          </ErrorBoundary>
           </div>
         </div>
       </div>

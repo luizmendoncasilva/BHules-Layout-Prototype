@@ -45,7 +45,7 @@ const v = (val) => val || '-'
 
 /* ── component ───────────────────────────────────────────────────── */
 
-export default function DanfseTab({ invoice, analysis }) {
+export default function DanfseTab({ invoice, analysis, company = null }) {
   const ref = useRef(null)
   const [busy, setBusy] = useState(false)
 
@@ -119,6 +119,14 @@ export default function DanfseTab({ invoice, analysis }) {
   // aumentaria e uniformizaria esses tamanhos, quebrando o layout. Cores
   // convertidas para tokens do DS (prioridade); font-weight 700/800 -> 600
   // (font-semibold, o peso mais forte disponível no DS).
+  // Chave sintética de dedup (NFSE-{cnpjPrestador}-{numero}-{codVerificacao}): o bloco
+  // "Chave de Acesso" deve exibir apenas o Codigo de Verificacao, nao a chave inteira.
+  const chaveStr = String(invoice.chave_nfe || '')
+  const isChaveSintetica = chaveStr.startsWith('NFSE-')
+  const codigoVerificacao = isChaveSintetica ? (chaveStr.split('-').pop() || '') : ''
+  const chaveLabel = isChaveSintetica ? 'Codigo de Verificacao' : 'Chave de Acesso da NFS-e'
+  const chaveDisplay = isChaveSintetica ? (codigoVerificacao || '-') : fChave(invoice.chave_nfe)
+
   /* ── Cell component ─── */
   const C = ({ label, children, bold, flex, align, bg }) => (
     <td style={{
@@ -193,8 +201,8 @@ export default function DanfseTab({ invoice, analysis }) {
           <tbody>
             <tr>
               <td style={{ padding: '5px 8px', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.5rem', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: 2 }}>Chave de Acesso da NFS-e</div>
-                <div style={{ fontSize: '0.82rem', fontWeight: 600, fontFamily: "'Courier New', monospace", letterSpacing: '1.5px', color: 'var(--foreground)' }}>{fChave(invoice.chave_nfe)}</div>
+                <div style={{ fontSize: '0.5rem', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: 2 }}>{chaveLabel}</div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, fontFamily: "'Courier New', monospace", letterSpacing: '1.5px', color: 'var(--foreground)' }}>{chaveDisplay}</div>
               </td>
             </tr>
           </tbody>
@@ -248,12 +256,12 @@ export default function DanfseTab({ invoice, analysis }) {
           <tbody>
             <SH>Tomador do Servico</SH>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <C label="CNPJ / CPF / NIF" bold flex="35%">{fDoc(invoice.dest_cnpj)}</C>
+              <C label="CNPJ / CPF / NIF" bold flex="35%">{fDoc(invoice.dest_cnpj || company?.cnpj)}</C>
               <C label="Inscricao Municipal" flex="30%">{v(invoice.ie_destinatario)}</C>
               <C label="Telefone" flex="20%">{v(invoice.dest_fone)}</C>
             </tr>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <C label="Nome / Nome Empresarial" bold>{v(invoice.dest_razao_social)}</C>
+              <C label="Nome / Nome Empresarial" bold>{invoice.dest_razao_social || company?.razao_social || company?.name || '-'}</C>
               <C label="E-mail" flex="35%">{v(invoice.dest_email)}</C>
             </tr>
             <tr>
@@ -280,7 +288,7 @@ export default function DanfseTab({ invoice, analysis }) {
           <tbody>
             <SH>Servico Prestado</SH>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <C label="Codigo de Tributacao Nacional" bold flex="30%">{v(cls.codigo_servico || invoice.codigo_servico_lc116)}</C>
+              <C label="Codigo de Tributacao Nacional" bold flex="30%">{cls.codigo_servico || invoice.codigo_servico_lc116 || invoice.cod_tributacao_nacional || '-'}</C>
               <C label="Codigo de Tributacao Municipal" flex="25%">{v(invoice.codigo_servico_municipal)}</C>
               <C label="Local da Prestacao" flex="25%">{v(cls.municipio_incidencia || invoice.emit_municipio)} {invoice.emit_uf ? `- ${invoice.emit_uf}` : ''}</C>
               <C label="Pais da Prestacao" flex="15%">Brasil</C>
@@ -289,7 +297,7 @@ export default function DanfseTab({ invoice, analysis }) {
               <td colSpan={4} style={{ padding: '6px 8px' }}>
                 <div style={{ fontSize: '0.5rem', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: 3 }}>Descricao do Servico</div>
                 <div style={{ fontSize: '0.68rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--foreground)' }}>
-                  {v(cls.descricao_servico || invoice.discriminacao_servico || invoice.info_complementares)}
+                  {v(invoice.discriminacao_servico || cls.descricao_servico || invoice.info_complementares)}
                 </div>
               </td>
             </tr>

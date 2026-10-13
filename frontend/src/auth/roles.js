@@ -8,6 +8,9 @@ export const ROLES_CLAIM = 'https://bhub.ai/roles'
 // Regras de Operação CFOP).
 export const ROLE_FISCAL_ADM = 'fiscal-adms'
 
+// Role for fiscal operations/analysts (viewing and operating invoices, SPED, validations).
+export const ROLE_FISCAL_OPERATOR = 'fiscal-operator'
+
 /** Roles carried by the authenticated user, or [] when absent. */
 export function getRoles(user) {
   const roles = user?.[ROLES_CLAIM]
@@ -19,3 +22,11 @@ export function useHasRole(role) {
   const { user } = useAuth()
   return getRoles(user).includes(role)
 }
+
+/** Hook: true when the current user has at least one of `roles`. */
+export function useHasAnyRole(...roles) {
+  const { user } = useAuth()
+  const userRoles = getRoles(user)
+  return roles.some((role) => userRoles.includes(role))
+}
+

@@ -3,6 +3,7 @@ import { Receipt, AlertTriangle, CheckCircle, TrendingUp, DollarSign, FileSearch
 import { Button, IconButton, Tooltip, TooltipTrigger, TooltipContent, Badge, Select, SelectTrigger, SelectContent, SelectItem, SelectValue, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Card, CardContent } from '@bhubai/bhub-design-system'
 import { useCompany } from '../../context/CompanyContext'
 import { api } from '../../api/client'
+import NfseConferencia from './NfseConferencia'
 
 function formatCurrency(val) {
   if (val == null || val === '' || val === '0' || val === 0) return 'R$ 0,00'
@@ -37,7 +38,7 @@ function RetentionBar({ label, value, total, color }) {
   )
 }
 
-export default function NfseDashboard() {
+export default function NfseDashboard({ onViewInvoice } = {}) {
   const { selectedCompany } = useCompany()
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -220,6 +221,9 @@ export default function NfseDashboard() {
           color="text-muted-foreground"
         />
       </div>
+
+      {/* Conferência — worklist de falso-negativo direcional + amostra CONFORME */}
+      <NfseConferencia companyId={selectedCompany?.id} onViewInvoice={onViewInvoice} />
 
       {/* Retention Totals & Score Distribution */}
       <div className="grid grid-cols-2 gap-6">
