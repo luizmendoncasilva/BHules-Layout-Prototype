@@ -359,6 +359,39 @@ function CorrectionModal({ sugestoes, onClose, onSubmit, submitting, naoContribu
   )
 }
 
+// Bloco de uma parte da nota (emitente/destinatário): nome em destaque e
+// os dados cadastrais em grade rótulo → valor.
+function ParteDaNota({ titulo, nome, campos, cnae }) {
+  const preenchidos = campos.filter(([, v]) => v)
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3 min-w-0">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{titulo}</p>
+      <p className="mt-1 text-sm font-semibold text-foreground truncate" title={nome}>{nome}</p>
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+        {preenchidos.map(([rotulo, valor, mono]) => (
+          <div key={rotulo} className="contents">
+            <dt className="text-muted-foreground">{rotulo}</dt>
+            <dd className={`text-foreground truncate ${mono ? 'font-mono' : ''}`}>{valor}</dd>
+          </div>
+        ))}
+        {cnae && (
+          <div className="contents">
+            <dt className="text-muted-foreground">CNAE</dt>
+            <dd
+              className="text-foreground truncate"
+              title={[cnae.description, ...(cnae.secundarios || []).map((c) => `${c.code} — ${c.description}`)].filter(Boolean).join('\n')}
+            >
+              <span className="font-mono">{cnae.code}</span>
+              {cnae.description && <span className="text-muted-foreground"> · {cnae.description}</span>}
+              {cnae.secundarios?.length > 0 && <span className="text-muted-foreground"> (+{cnae.secundarios.length})</span>}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  )
+}
+
 export default function DetailView({ invoice: invoiceProp, onBack }) {
   // A nota pode chegar só com o id (aberta por alerta, NFS-e, lote): o detalhe
   // completo vem da API e tem prioridade sobre a linha da lista.
@@ -577,7 +610,7 @@ export default function DetailView({ invoice: invoiceProp, onBack }) {
   )
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full overflow-y-auto bg-background">
       {/* Header */}
       {/* flex-wrap: quando os botões não cabem ao lado do título, descem para a
           linha de baixo; o título trunca (min-w-0) em vez de quebrar em várias linhas. */}
@@ -678,7 +711,7 @@ export default function DetailView({ invoice: invoiceProp, onBack }) {
                 Desfazer
               </Button>
               <Badge variant="success" className="h-9 px-3 text-sm">
-                <Check className="w-4 h-4" /> {isNfse ? 'Escriturada' : 'Escrituracao Confirmada'}
+                <Check className="w-4 h-4" /> {isNfse ? 'Escriturada' : 'Escrituração confirmada'}
               </Badge>
             </>
           )}
@@ -707,114 +740,80 @@ export default function DetailView({ invoice: invoiceProp, onBack }) {
         </div>
       )}
 
-      {/* Summary bar — Emitente + Destinatário */}
-      <div className="bg-card border-b border-border px-6 py-2 space-y-1">
-        <div className="flex gap-6 text-sm text-muted-foreground items-center">
-          <span className="text-xs font-semibold text-muted-foreground uppercase w-20">{isNfse ? 'Prestador' : 'Emitente'}</span>
-          <span><strong className="text-foreground">{invoice.emit_razao_social || invoice.emit_cnpj || '-'}</strong></span>
-          <span>CNPJ: <strong className="text-foreground font-mono text-xs">{invoice.emit_cnpj || '-'}</strong></span>
-          <span>UF: <strong className="text-foreground">{invoice.emit_uf || '-'}</strong></span>
-          {invoice.ie_emitente && <span>IE: <strong className="text-foreground font-mono text-xs">{invoice.ie_emitente}</strong></span>}
-          <span>Regime: <strong className={`${
-            (invoice.crt === '1' || invoice.crt === 1) ? 'text-info-text' :
-            (invoice.crt === '3' || invoice.crt === 3) ? 'text-foreground' :
-            'text-muted-foreground'
-          }`}>{
-            invoice.crt === '1' || invoice.crt === 1 ? 'Simples Nacional' :
-            invoice.crt === '2' || invoice.crt === 2 ? 'SN Excesso Sublimite' :
-            invoice.crt === '3' || invoice.crt === 3 ? 'Regime Normal' :
-            invoice.regime_prestador || 'Não informado'
-          }</strong></span>
-          {(emitCnaePrincipal || emitter?.cnae) && (
-            <span
-              title={
-                emitCnaePrincipal?.description
-                  ? `${emitCnaePrincipal.description}${
-                      emitCnaesSecundarios.length
-                        ? '\n\nSecundários:\n' + emitCnaesSecundarios.map(c => `${c.code} — ${c.description}`).join('\n')
-                        : ''
-                    }`
-                  : emitter?.cnae_descricao || undefined
-              }
-            >
-              CNAE: <strong className="text-foreground font-mono text-xs">{emitCnaePrincipal?.code || emitter.cnae}</strong>
-              {(emitCnaePrincipal?.description || emitter?.cnae_descricao) && (
-                <span className="text-muted-foreground ml-1">— {emitCnaePrincipal?.description || emitter.cnae_descricao}</span>
+      {/* Partes da nota — Emitente | Destinatário | Documento, cada um com
+          rótulo e valor alinhados (antes era uma linha corrida que quebrava
+          desalinhada em telas menores). */}
+      <div className="px-4 pt-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_minmax(220px,0.7fr)]">
+          <ParteDaNota
+            titulo={isNfse ? 'Prestador' : 'Emitente'}
+            nome={invoice.emit_razao_social || invoice.emit_cnpj || '-'}
+            campos={[
+              ['CNPJ', invoice.emit_cnpj, true],
+              ['UF', invoice.emit_uf],
+              ['IE', invoice.ie_emitente, true],
+              ['Regime',
+                invoice.crt === '1' || invoice.crt === 1 ? 'Simples Nacional' :
+                invoice.crt === '2' || invoice.crt === 2 ? 'SN Excesso Sublimite' :
+                invoice.crt === '3' || invoice.crt === 3 ? 'Regime Normal' :
+                invoice.regime_prestador || 'Não informado'],
+            ]}
+            cnae={(emitCnaePrincipal || emitter?.cnae) ? {
+              code: emitCnaePrincipal?.code || emitter.cnae,
+              description: emitCnaePrincipal?.description || emitter?.cnae_descricao,
+              secundarios: emitCnaesSecundarios,
+            } : null}
+          />
+          <ParteDaNota
+            titulo={isNfse ? 'Tomador' : 'Destinatário'}
+            nome={company?.razao_social || company?.name || invoice.dest_razao_social || invoice.dest_cnpj || '-'}
+            campos={[
+              ['CNPJ', invoice.dest_cnpj || company?.cnpj, true],
+              ['UF', invoice.dest_uf],
+              ['IE', invoice.ie_destinatario || company?.inscricao_estadual, true],
+              ['Regime', company?.regime_tributario],
+            ]}
+            cnae={(destCnaePrincipal || company?.cnae) ? {
+              code: destCnaePrincipal?.code || company.cnae,
+              description: destCnaePrincipal?.description,
+              secundarios: destCnaesSecundarios,
+            } : null}
+          />
+          <div className="rounded-lg border border-border bg-card px-4 py-3 min-w-0 sm:col-span-2 xl:col-span-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Documento</p>
+            <p className="mt-1 text-xl font-semibold text-foreground tabular-nums">
+              {formatCurrency(invoice.valor_servicos || invoice.vl_doc)}
+            </p>
+            <dl className="mt-2 space-y-1 text-xs">
+              {!isNfse && (
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground">Chave</dt>
+                  <dd className="font-mono text-foreground break-all">{invoice.chave_nfe || '-'}</dd>
+                </div>
               )}
-              {emitCnaesSecundarios.length > 0 && (
-                <span className="text-muted-foreground ml-1">(+{emitCnaesSecundarios.length})</span>
+              {isNfse && invoice.codigo_servico_lc116 && (
+                <div className="flex gap-2">
+                  <dt className="text-muted-foreground">Serviço</dt>
+                  <dd className="font-mono text-foreground">{invoice.codigo_servico_lc116}</dd>
+                </div>
               )}
-            </span>
-          )}
-          {invoice.status_analise && (
-            <Badge
-              className="ml-auto rounded-full"
-              variant={
-                invoice.status_analise === 'CONFORME' ? 'success' :
-                invoice.status_analise === 'REQUER_REVISAO' ? 'warning' :
-                invoice.status_analise === 'BLOQUEADO' ? 'destructive' :
-                'secondary'
-              }
-            >
-              {invoice.status_analise}
-            </Badge>
-          )}
-        </div>
-        <div className="flex gap-6 text-sm text-muted-foreground items-center">
-          <span className="text-xs font-semibold text-muted-foreground uppercase w-20">Destinatario</span>
-          <span><strong className="text-foreground">{company?.razao_social || company?.name || invoice.dest_cnpj || '-'}</strong></span>
-          <span>CNPJ: <strong className="text-foreground font-mono text-xs">{invoice.dest_cnpj || company?.cnpj || '-'}</strong></span>
-          <span>UF: <strong className="text-foreground">{invoice.dest_uf || '-'}</strong></span>
-          {(invoice.ie_destinatario || company?.inscricao_estadual) && (
-            <span>IE: <strong className="text-foreground font-mono text-xs">{invoice.ie_destinatario || company.inscricao_estadual}</strong></span>
-          )}
-          {company?.regime_tributario && (
-            <span>Regime: <strong className="text-foreground">{company.regime_tributario}</strong></span>
-          )}
-          {(destCnaePrincipal || company?.cnae) && (
-            <span
-              title={
-                destCnaePrincipal?.description
-                  ? `${destCnaePrincipal.description}${
-                      destCnaesSecundarios.length
-                        ? '\n\nSecundários:\n' + destCnaesSecundarios.map(c => `${c.code} — ${c.description}`).join('\n')
-                        : ''
-                    }`
-                  : undefined
-              }
-            >
-              CNAE: <strong className="text-foreground font-mono text-xs">{destCnaePrincipal?.code || company.cnae}</strong>
-              {destCnaePrincipal?.description && (
-                <span className="text-muted-foreground ml-1">— {destCnaePrincipal.description}</span>
-              )}
-              {destCnaesSecundarios.length > 0 && (
-                <span className="text-muted-foreground ml-1">(+{destCnaesSecundarios.length})</span>
-              )}
-            </span>
-          )}
-          <span className="ml-auto text-xs text-muted-foreground">
-            Valor: <strong className="text-foreground">{formatCurrency(invoice.valor_servicos || invoice.vl_doc)}</strong>
-          </span>
-        </div>
-        {!isNfse && (
-          <div className="text-xs text-muted-foreground">
-            Chave: <span className="font-mono">{invoice.chave_nfe || '-'}</span>
-            {isNfse && invoice.codigo_servico_lc116 && <> | Servico: <span className="font-mono">{invoice.codigo_servico_lc116}</span></>}
+            </dl>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Status reasons — show why the note was blocked/flagged */}
       {/* max-h-[25vh]: viewport-relative cap intentionally kept (não há token de escala p/ vh) */}
       {(statusReasons || difalPendente) && (
-        <div className="bg-card border-b border-border px-6 py-4 max-h-[25vh] overflow-y-auto">
+        <div className="px-4 pt-4">
           <StatusReasons data={statusReasons} difalPendente={difalPendente} />
         </div>
       )}
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col min-w-0 bg-card m-4 rounded-lg shadow-sm border border-border">
+      {/* Main Content Area — a página rola inteira (topo + abas); o card das
+          abas tem altura natural em vez de disputar uma altura fixa. */}
+      <div className="flex shrink-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-[60vh] bg-card m-4 rounded-lg shadow-sm border border-border">
           {/* Sub Tabs */}
           <div className="px-6 pt-4 pb-3 flex justify-between items-center">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -826,14 +825,14 @@ export default function DetailView({ invoice: invoiceProp, onBack }) {
               <TabsList variant="default" className="!h-11 p-1.5">
                 {isNfse ? (
                   <>
-                    <TabsTrigger value="retencoes" className="px-3">Retencoes</TabsTrigger>
+                    <TabsTrigger value="retencoes" className="px-3">Retenções</TabsTrigger>
                     <TabsTrigger value="reinf" className="px-3">REINF Cruzamento</TabsTrigger>
                     <TabsTrigger value="espelho" className="px-3">Dados NFS-e</TabsTrigger>
                     <TabsTrigger value="auditoria" className="px-3">Auditoria</TabsTrigger>
                   </>
                 ) : (
                   <>
-                    <TabsTrigger value="escrituracao" className="px-3">Escrituracao</TabsTrigger>
+                    <TabsTrigger value="escrituracao" className="px-3">Escrituração</TabsTrigger>
                     <TabsTrigger value="espelho" className="px-3">Espelho NF-e</TabsTrigger>
                     <TabsTrigger value="difal" className="px-3 gap-1.5">
                       DIFAL
@@ -847,7 +846,7 @@ export default function DetailView({ invoice: invoiceProp, onBack }) {
           </div>
 
           {/* Dynamic Content */}
-          <div className="flex-1 overflow-auto p-6">
+          <div className="flex-1 p-6 pt-2">
             {itemsLoading && !isNfse ? (
               <div className="flex items-center justify-center h-32 text-muted-foreground">
                 <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full mr-2" />

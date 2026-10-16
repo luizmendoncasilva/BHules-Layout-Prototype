@@ -322,11 +322,11 @@ function ResumoFinanceiro({ resumo }) {
   if (!resumo) return null
 
   const cards = [
-    { label: 'Total Creditos', value: resumo.total_creditos, icon: TrendingUp, highlight: true },
-    { label: 'Credito ICMS', value: resumo.total_credito_icms },
-    { label: 'Credito PIS', value: resumo.total_credito_pis },
-    { label: 'Credito COFINS', value: resumo.total_credito_cofins },
-    { label: 'Credito IPI', value: resumo.total_credito_ipi },
+    { label: 'Total créditos', value: resumo.total_creditos, icon: TrendingUp, highlight: true },
+    { label: 'Crédito ICMS', value: resumo.total_credito_icms },
+    { label: 'Crédito PIS', value: resumo.total_credito_pis },
+    { label: 'Crédito COFINS', value: resumo.total_credito_cofins },
+    { label: 'Crédito IPI', value: resumo.total_credito_ipi },
     { label: 'DIFAL devido', value: resumo.total_difal },
     { label: 'ST retido', value: resumo.total_st_retido },
   ]
@@ -335,7 +335,7 @@ function ResumoFinanceiro({ resumo }) {
     <div className="bg-muted border border-border rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
         <DollarSign className="w-4 h-4 text-muted-foreground" />
-        <h4 className="text-sm font-semibold text-foreground">Resumo Financeiro</h4>
+        <h4 className="text-sm font-semibold text-foreground">Resumo financeiro</h4>
         <span className="text-xs text-muted-foreground ml-auto">NF: {formatBRL(resumo.valor_total_nf)}</span>
       </div>
       <div className="grid grid-cols-7 gap-2">
@@ -480,7 +480,7 @@ function SugestaoRow({ s, index, onFeedback, feedbackStatus, canRevogarPrecedent
 
             {/* Credits */}
             <div className="bg-card rounded-lg p-3 border border-border">
-              <div className="text-xs font-medium text-muted-foreground mb-2">Creditos Tributarios</div>
+              <div className="text-xs font-medium text-muted-foreground mb-2">Créditos tributários</div>
               <div className="grid grid-cols-4 gap-4">
                 <CreditoBadge credito={s.credito_icms} label="ICMS" />
                 <CreditoBadge credito={s.credito_pis} label="PIS" />
@@ -734,7 +734,7 @@ export default function EscrituracaoTab({ data, invoice, jaEnviada = false }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <BookOpen className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold text-base">Sugestao de Escrituracao</h3>
+          <h3 className="font-semibold text-base">Sugestão de escrituração</h3>
           <ConfidenceBadge nivel={nivel_confianca} valor={confianca_geral} />
           {requer_revisao_humana && (
             <Badge className="text-xs px-2 py-0.5 gap-1 bg-warning-subtle text-warning-text border border-warning-border">
@@ -744,7 +744,7 @@ export default function EscrituracaoTab({ data, invoice, jaEnviada = false }) {
         </div>
         <div className="text-xs text-muted-foreground flex items-center gap-3">
           <span>{etapas_executadas?.length || 0} etapas</span>
-          <span>{total_divergencias} divergencias</span>
+          <span>{total_divergencias} divergências</span>
           <span>{sugestoes?.length || 0} itens</span>
         </div>
       </div>
@@ -828,7 +828,7 @@ export default function EscrituracaoTab({ data, invoice, jaEnviada = false }) {
         <div className={`grid ${GRID_COLS} items-center px-3 py-1.5 gap-1 border-b border-border`}>
           <span></span>
           <span className="text-xs text-muted-foreground uppercase">#</span>
-          <span className="text-xs text-muted-foreground uppercase">Descricao</span>
+          <span className="text-xs text-muted-foreground uppercase">Descrição</span>
           <span className="text-xs text-muted-foreground uppercase">NCM</span>
           <span className="text-xs text-muted-foreground uppercase text-center">Finalidade</span>
           <span className="text-xs text-muted-foreground uppercase text-center">CFOP</span>

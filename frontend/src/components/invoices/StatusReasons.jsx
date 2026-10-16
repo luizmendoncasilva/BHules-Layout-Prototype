@@ -1,5 +1,5 @@
 import { useState, useRef, useLayoutEffect } from 'react'
-import { CheckCircle, AlertTriangle, XCircle, Info, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, Info, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import { Badge } from '@bhubai/bhub-design-system'
 
 function ExpandableText({ text, className = '', clampLines = 2 }) {
@@ -32,161 +32,151 @@ function ExpandableText({ text, className = '', clampLines = 2 }) {
   )
 }
 
+// Severidade → cor só no ícone e no rótulo; as linhas ficam em fundo neutro
+// (as faixas coloridas de ponta a ponta pesavam a tela).
 const severityConfig = {
-  BLOQUEIO: { bg: 'bg-destructive-subtle', border: 'border-destructive-border', text: 'text-destructive-text', icon: XCircle, iconColor: 'text-destructive', label: 'Bloqueio', order: 0, badgeVariant: 'destructive' },
-  ALERTA_CRITICO: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Critico', order: 1, badgeVariant: 'warning' },
+  BLOQUEIO: { text: 'text-destructive-text', chip: 'bg-destructive-subtle text-destructive-text', icon: XCircle, label: 'Bloqueio', plural: 'bloqueios', order: 0 },
+  ALERTA_CRITICO: { text: 'text-destructive-text', chip: 'bg-destructive-subtle text-destructive-text', icon: AlertTriangle, label: 'Crítico', plural: 'críticos', order: 1 },
   // Severidade da escrituração de NF-e (escrituracao_resultado.divergencias)
-  CRITICO: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Critico', order: 1, badgeVariant: 'warning' },
-  ALERTA: { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', icon: AlertTriangle, iconColor: 'text-warning', label: 'Alerta', order: 2, badgeVariant: 'warning' },
-  INFORMATIVO: { bg: 'bg-info-subtle', border: 'border-info-border', text: 'text-info-text', icon: Info, iconColor: 'text-info', label: 'Info', order: 3, badgeVariant: 'info' },
-  OPORTUNIDADE: { bg: 'bg-success-subtle', border: 'border-success-border', text: 'text-success-text', icon: CheckCircle, iconColor: 'text-success', label: 'Oportunidade', order: 4, badgeVariant: 'success' },
+  CRITICO: { text: 'text-destructive-text', chip: 'bg-destructive-subtle text-destructive-text', icon: AlertTriangle, label: 'Crítico', plural: 'críticos', order: 1 },
+  ALERTA: { text: 'text-warning-text', chip: 'bg-warning-subtle text-warning-text', icon: AlertTriangle, label: 'Alerta', plural: 'alertas', order: 2 },
+  INFORMATIVO: { text: 'text-info-text', chip: 'bg-info-subtle text-info-text', icon: Info, label: 'Informativo', plural: 'informativos', order: 3 },
+  OPORTUNIDADE: { text: 'text-success-text', chip: 'bg-success-subtle text-success-text', icon: CheckCircle, label: 'Oportunidade', plural: 'oportunidades', order: 4 },
 }
 
-function ReasonCard({ r }) {
+const STATUS_STYLE = {
+  BLOQUEADO: { chip: 'bg-destructive-subtle text-destructive-text', Icon: XCircle, label: 'Bloqueada', badge: 'destructive' },
+  REQUER_REVISAO: { chip: 'bg-warning-subtle text-warning-text', Icon: AlertTriangle, label: 'Requer revisão', badge: 'warning' },
+  CRITICO: { chip: 'bg-warning-subtle text-warning-text', Icon: AlertTriangle, label: 'Requer revisão', badge: 'warning' },
+  CONFORME: { chip: 'bg-success-subtle text-success-text', Icon: CheckCircle, label: 'Conforme', badge: 'success' },
+}
+
+const ordem = (sev) => severityConfig[sev]?.order ?? 9
+
+function ReasonRow({ r }) {
   const cfg = severityConfig[r.severity] || severityConfig.INFORMATIVO
   const SevIcon = cfg.icon
   return (
-    <div className={`rounded border ${cfg.border} ${cfg.bg} px-3 py-2`}>
-      <div className="flex items-start gap-2">
-        <SevIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${cfg.iconColor}`} />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
-            <span className="text-xs text-muted-foreground font-mono">{r.rule_code}</span>
-            {r.field_name && r.field_name !== r.rule_code && <span className="text-xs text-muted-foreground">({r.field_name})</span>}
-            {r.num_item != null && (
-              <span className="text-xs text-muted-foreground">
-                Item {r.num_item}{r.item_descricao ? ` — ${r.item_descricao}` : ''}
-              </span>
-            )}
-          </div>
-          <ExpandableText text={r.description} className={`text-xs mt-0.5 ${cfg.text}`} clampLines={2} />
-          {r.current_value && r.expected_value && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Atual: <span className="font-mono">{r.current_value}</span> → Esperado: <span className="font-mono">{r.expected_value}</span>
-            </p>
-          )}
-          {r.legislation_ref && (
-            <p className="text-xs text-muted-foreground mt-0.5 italic">{r.legislation_ref}</p>
-          )}
-          {r.impact_value != null && r.impact_value !== 0 && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Impacto: {Number(r.impact_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-            </p>
-          )}
-        </div>
+    <li className="flex gap-3 px-4 py-3">
+      <div className={`size-6 rounded-md flex items-center justify-center shrink-0 ${cfg.chip}`} title={cfg.label}>
+        <SevIcon className="h-3.5 w-3.5" />
       </div>
-    </div>
-  )
-}
-
-function SeverityGroup({ severity, reasons, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen)
-  const cfg = severityConfig[severity] || severityConfig.INFORMATIVO
-  const SevIcon = cfg.icon
-
-  return (
-    <div className="border border-border rounded">
-      <button
-        onClick={() => setOpen(!open)}
-        className={`w-full flex items-center justify-between px-3 py-2 ${cfg.bg} rounded-t ${!open ? 'rounded-b' : ''}`}
-      >
-        <div className="flex items-center gap-2">
-          <SevIcon className={`h-4 w-4 ${cfg.iconColor}`} />
-          <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
-          <span className="text-xs text-muted-foreground">({reasons.length})</span>
+      <div className="min-w-0 flex-1">
+        <ExpandableText text={r.description} className="text-sm text-foreground" clampLines={2} />
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className={`font-medium ${cfg.text}`}>{cfg.label}</span>
+          {r.num_item != null && (
+            <span className="truncate max-w-[320px]">Item {r.num_item}{r.item_descricao ? ` · ${r.item_descricao}` : ''}</span>
+          )}
+          {r.rule_code && <span className="font-mono">{r.rule_code}</span>}
+          {r.impact_value != null && r.impact_value !== 0 && (
+            <span>Impacto {Number(r.impact_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+          )}
         </div>
-        {open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
-      </button>
-      {open && (
-        <div className="p-2 space-y-1.5">
-          {reasons.map((r, i) => <ReasonCard key={i} r={r} />)}
-        </div>
-      )}
-    </div>
+        {r.current_value && r.expected_value && (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 text-xs">
+            <span className="text-muted-foreground">{r.field_name || 'Valor'}</span>
+            <span className="font-mono text-muted-foreground line-through">{r.current_value}</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <span className="font-mono font-semibold text-foreground">{r.expected_value}</span>
+          </div>
+        )}
+        {r.legislation_ref && (
+          <p className="mt-1 text-xs text-muted-foreground italic">{r.legislation_ref}</p>
+        )}
+      </div>
+    </li>
   )
 }
 
 // Selo de DIFAL pendente (FIS-1222): a nota tem item de DIFAL do Simples
 // aguardando o analista na aba DIFAL.
-function DifalPendenteAviso() {
+function DifalPendenteLinha() {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-xs text-warning-text">
-      <AlertTriangle className="h-4 w-4 shrink-0" />
-      <span><strong className="font-semibold">DIFAL pendente</strong> · há itens aguardando ajuste do analista na aba DIFAL.</span>
-    </div>
+    <li className="flex gap-3 px-4 py-3">
+      <div className="size-6 rounded-md flex items-center justify-center shrink-0 bg-warning-subtle text-warning-text">
+        <AlertTriangle className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-foreground">Há itens de DIFAL do Simples aguardando ajuste do analista.</p>
+        <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-warning-text">DIFAL pendente</span> · veja a aba DIFAL</p>
+      </div>
+    </li>
   )
 }
 
 export default function StatusReasons({ data, difalPendente = false }) {
-  // O selo aparece mesmo sem motivos de status.
-  if (!data) return difalPendente ? <DifalPendenteAviso /> : null
+  const [mostrarInfo, setMostrarInfo] = useState(false)
+  if (!data && !difalPendente) return null
 
-  const { status_analise, summary, reasons, alertas_nota } = data
-  const hasReasons = reasons && reasons.length > 0
+  const { status_analise, summary, reasons, alertas_nota } = data || {}
+  const st = STATUS_STYLE[status_analise] || (data ? STATUS_STYLE.CONFORME : STATUS_STYLE.REQUER_REVISAO)
 
-  const statusStyle = status_analise === 'BLOQUEADO'
-    ? { bg: 'bg-destructive-subtle', border: 'border-destructive-border', text: 'text-destructive-text', Icon: XCircle, iconColor: 'text-destructive' }
-    : status_analise === 'REQUER_REVISAO' || status_analise === 'CRITICO'
-    ? { bg: 'bg-warning-subtle', border: 'border-warning-border', text: 'text-warning-text', Icon: AlertTriangle, iconColor: 'text-warning' }
-    : { bg: 'bg-success-subtle', border: 'border-success-border', text: 'text-success-text', Icon: CheckCircle, iconColor: 'text-success' }
+  // Mais grave primeiro; informativos ficam recolhidos atrás de um botão.
+  const ordenados = [...(reasons || [])].sort((a, b) => ordem(a.severity) - ordem(b.severity))
+  const informativos = ordenados.filter((r) => (r.severity || 'INFORMATIVO') === 'INFORMATIVO')
+  const acionaveis = ordenados.filter((r) => (r.severity || 'INFORMATIVO') !== 'INFORMATIVO')
+  const visiveis = mostrarInfo ? ordenados : acionaveis
 
-  // Group reasons by severity
-  const groups = {}
-  if (hasReasons) {
-    for (const r of reasons) {
-      const sev = r.severity || 'INFORMATIVO'
-      if (!groups[sev]) groups[sev] = []
-      groups[sev].push(r)
-    }
-  }
+  // "1 alerta · 1 informativo" ao lado do título.
+  const porSeveridade = ordenados.reduce((acc, r) => {
+    const k = r.severity || 'INFORMATIVO'
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {})
+  const contagem = Object.entries(porSeveridade)
+    .sort(([a], [b]) => ordem(a) - ordem(b))
+    .map(([sev, n]) => {
+      const c = severityConfig[sev] || severityConfig.INFORMATIVO
+      return `${n} ${n === 1 ? c.label.toLowerCase() : c.plural}`
+    })
+  if (difalPendente) contagem.unshift('DIFAL pendente')
 
-  // Sort groups by severity order
-  const sortedGroups = Object.entries(groups).sort(
-    ([a], [b]) => (severityConfig[a]?.order ?? 9) - (severityConfig[b]?.order ?? 9)
-  )
+  const temLista = difalPendente || visiveis.length > 0 || (alertas_nota && alertas_nota.length > 0)
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold leading-7 text-foreground">
-        Motivo do status
-      </h3>
-
-      {difalPendente && <DifalPendenteAviso />}
-
-      {/* Summary box */}
-      <div className={`rounded-lg border ${statusStyle.border} ${statusStyle.bg} p-4`}>
-        <div className="flex items-start gap-3">
-          <statusStyle.Icon className={`h-5 w-5 mt-0.5 flex-shrink-0 ${statusStyle.iconColor}`} />
-          <div className="min-w-0 flex-1">
-            <ExpandableText text={summary} className={`text-sm font-medium ${statusStyle.text}`} clampLines={2} />
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      {/* Resumo: status da nota + contagem + frase do motor */}
+      <div className="flex items-start gap-3 px-4 py-3">
+        <div className={`size-8 rounded-md flex items-center justify-center shrink-0 ${st.chip}`}>
+          <st.Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">Motivo do status</h3>
+            {data && <Badge variant={st.badge}>{st.label}</Badge>}
+            {contagem.length > 0 && <span className="text-xs text-muted-foreground">{contagem.join(' · ')}</span>}
           </div>
+          {summary && <ExpandableText text={summary} className="text-sm text-muted-foreground mt-0.5" clampLines={2} />}
         </div>
       </div>
 
-      {/* Alertas nota-level */}
-      {alertas_nota && alertas_nota.length > 0 && (
-        <div className="space-y-1">
-          {alertas_nota.map((alerta) => (
-            <div key={alerta} className="text-xs text-warning-text bg-warning-subtle border border-warning-border rounded px-3 py-1.5">
-              <ExpandableText text={alerta} className="text-xs text-warning-text" clampLines={2} />
-            </div>
+      {/* Pontos a conferir, do mais grave ao menos grave */}
+      {temLista && (
+        <ul className="border-t border-border divide-y divide-border">
+          {difalPendente && <DifalPendenteLinha />}
+          {(alertas_nota || []).map((alerta) => (
+            <li key={alerta} className="flex gap-3 px-4 py-3">
+              <div className="size-6 rounded-md flex items-center justify-center shrink-0 bg-warning-subtle text-warning-text">
+                <AlertTriangle className="h-3.5 w-3.5" />
+              </div>
+              <ExpandableText text={alerta} className="text-sm text-foreground" clampLines={2} />
+            </li>
           ))}
-        </div>
+          {visiveis.map((r, i) => <ReasonRow key={`${r.rule_code}-${i}`} r={r} />)}
+        </ul>
       )}
 
-      {/* Grouped reasons by severity */}
-      {sortedGroups.length > 0 && (
-        <div className="space-y-2">
-          {sortedGroups.map(([severity, items]) => (
-            <SeverityGroup
-              key={severity}
-              severity={severity}
-              reasons={items}
-              defaultOpen={severity !== 'INFORMATIVO'}
-            />
-          ))}
-        </div>
+      {informativos.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setMostrarInfo((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 border-t border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+        >
+          {mostrarInfo
+            ? <>Ocultar informativos <ChevronUp className="h-3.5 w-3.5" /></>
+            : <>Mostrar {informativos.length} {informativos.length === 1 ? 'informativo' : 'informativos'} <ChevronDown className="h-3.5 w-3.5" /></>}
+        </button>
       )}
     </div>
   )
