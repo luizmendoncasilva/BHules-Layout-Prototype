@@ -76,3 +76,47 @@ body {
     border-color: transparent;
   }
 }
+
+/* Scroll discreto em todo o app — mesmo visual do utilitário `scrollbar-thin`
+   do DS. Sem isso, as áreas com overflow mostravam a barra nativa do
+   Windows: larga, branca e com setas.
+   Atenção: no Chrome 121+, se `scrollbar-width`/`scrollbar-color` estiverem
+   definidos, o ::-webkit-scrollbar é ignorado e volta a barra nativa. O
+   utilitário do DS define `scrollbar-width: thin` (o @supports dele também
+   casa no Chrome), por isso aqui zeramos essas propriedades fora do Firefox
+   e deixamos só o ::-webkit-scrollbar. Regras fora de @layer de propósito,
+   para vencerem a do DS. */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  background-color: color-mix(in oklab, currentColor 30%, transparent);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, currentColor 50%, transparent);
+}
+@supports not (-moz-appearance: none) {
+  *,
+  .scrollbar-thin {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+/* Firefox não tem ::-webkit-scrollbar: usa as propriedades padrão. */
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, currentColor 30%, transparent) transparent;
+  }
+}
