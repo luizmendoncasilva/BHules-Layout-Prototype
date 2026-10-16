@@ -11,7 +11,7 @@ import { useCompanies } from '../../hooks/useCompanies'
 import { filtrarEmpresas } from '../../utils/matchEmpresa'
 import StatusBadge from '../shared/StatusBadge'
 import Pagination from '../shared/Pagination'
-import { INTEGRADAS_TABS as TABS } from '../../constants/integradasTabs'
+import { INTEGRADAS_TABS as TABS, INTEGRADAS_TAB_PADRAO, pathForIntegradas } from '../../constants/integradasTabs'
 
 // --- Formatters (espelham ListView) ---
 function formatCurrency(val) {
@@ -160,7 +160,7 @@ function gruposParaCsv(grupos) {
 
 export default function NotasIntegradas({ activeTab: activeTabProp, onTabChange }) {
   const { data: companies = [] } = useCompanies()
-  const [activeTabLocal, setActiveTabLocal] = useState('nfse_saida')
+  const [activeTabLocal, setActiveTabLocal] = useState(INTEGRADAS_TAB_PADRAO)
   const activeTab = activeTabProp ?? activeTabLocal
   const setActiveTab = (tab) => { setActiveTabLocal(tab); onTabChange?.(tab) }
   const [page, setPage] = useState(1)
@@ -184,7 +184,7 @@ export default function NotasIntegradas({ activeTab: activeTabProp, onTabChange 
   const [grupoAberto, setGrupoAberto] = useState(null)
 
   const tab = TABS.find((t) => t.id === activeTab) || TABS[0]
-  const podeAgrupar = tab.id === 'nfse_saida'
+  const podeAgrupar = tab.id === 'int_servicos_prestados'
 
   const sortedCompanies = useMemo(
     () => [...companies].sort((a, b) => (a.razao_social || '').localeCompare(b.razao_social || '', 'pt-BR')),
@@ -219,6 +219,7 @@ export default function NotasIntegradas({ activeTab: activeTabProp, onTabChange 
     search: debouncedSearch || undefined,
     codMod: tab.codMod,
     indEmit: tab.indEmit || undefined,
+    indOper: tab.indOper || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   })
@@ -309,7 +310,7 @@ export default function NotasIntegradas({ activeTab: activeTabProp, onTabChange 
       {/* Título — a navegação entre tipos agora vive na sidebar (Notas Integradas) */}
       <div className="px-6 py-4 border-b border-border flex items-center gap-2">
         <tab.icon className="w-5 h-5 text-muted-foreground" />
-        <h1 className="text-xl font-semibold text-foreground">Notas Integradas — {tab.label}</h1>
+        <h1 className="text-xl font-semibold text-foreground">Notas Integradas — {(pathForIntegradas(tab.id) || [tab.label]).join(' — ')}</h1>
       </div>
 
       {/* Toolbar — filtros (read-only, sem ações) */}

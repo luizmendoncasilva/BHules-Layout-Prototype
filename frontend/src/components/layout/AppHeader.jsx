@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { Bell, LogOut, XCircle, AlertTriangle, ShieldAlert, DollarSign, Clock } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import {
   IconButton, Tooltip, TooltipTrigger, TooltipContent, Button, Dialog, DialogContent, DialogTitle,
   Popover, PopoverTrigger, PopoverContent,
   Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator,
+  SidebarTrigger, Separator,
 } from '@bhubai/bhub-design-system'
-import { useAuth } from '../../auth/useAuth'
 import { api } from '../../api/client'
 import AlertsPanel from '../alerts/AlertsPanel'
+import { configDoAlerta, resumoDoAlerta, tempoRelativo, dataHoraCompleta } from '../alerts/alertConfig'
 import { VIEW_BREADCRUMBS } from '../../constants/viewBreadcrumbs'
 
 // Monta a trilha de breadcrumb pra uma view/subView atual, seguindo a
@@ -58,21 +59,11 @@ function buildCrumbs(currentView, subViews, previousView, selectedInvoice) {
   return crumbs
 }
 
-// Mini-versão do TYPE_CONFIG de AlertsPanel.jsx, só para os ícones/cores
-// da prévia no drawer de notificações.
-const TYPE_CONFIG = {
-  DIVERGENCIA_CRITICA: { icon: XCircle, color: 'text-destructive-text', label: 'Divergência Crítica' },
-  CONFIANCA_BAIXA: { icon: AlertTriangle, color: 'text-warning-text', label: 'Confiança Baixa' },
-  VALIDACAO_BLOQUEANTE: { icon: ShieldAlert, color: 'text-destructive-text', label: 'Validação Bloqueante' },
-  IMPACTO_FINANCEIRO_ALTO: { icon: DollarSign, color: 'text-info-text', label: 'Impacto Financeiro' },
-}
-
-// Header global e minimalista — presente em todas as telas: sino de
-// notificações (abre um drawer com a prévia dos alertas) e o avatar do
-// usuário à direita.
-export default function AppHeader({ currentView, subViews, onNavigate, previousView, selectedInvoice }) {
-  const { user, logout } = useAuth()
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
+// Header global e minimalista — presente em todas as telas, no padrão do
+// PageHeader do DS (feat/sidebar-v2): SidebarTrigger + breadcrumbs à
+// esquerda e o sino de notificações (abre um drawer com a prévia dos alertas)
+// à direita. O usuário/Sair agora fica no rodapé da AppSidebar (NavUser).
+export default function AppHeader({ currentView, subViews, onNavigate, previousView, selectedInvoice, onOpenInvoice }) {
   const [showNotifDrawer, setShowNotifDrawer] = useState(false)
   const [alertsModalOpen, setAlertsModalOpen] = useState(false)
 
@@ -89,13 +80,13 @@ export default function AppHeader({ currentView, subViews, onNavigate, previousV
   })
 
   const count = stats?.total || 0
-  const initials = user?.name
-    ? user.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
-    : '?'
   const crumbs = buildCrumbs(currentView, subViews, previousView, selectedInvoice)
 
   return (
-    <div className="h-14 shrink-0 border-b border-border bg-card flex items-center justify-between px-4 gap-3">
+    <header data-slot="page-header" className="sticky top-0 z-10 h-14 shrink-0 border-b border-border bg-background flex items-center justify-between px-4 gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+      <SidebarTrigger className="-ml-1 shrink-0" aria-label="Alternar menu lateral" />
+      <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
       {crumbs.length > 0 ? (
         <Breadcrumb className="min-w-0">
           {/* DS usa text-sm por padrão — reduzido pra text-xs (mesma escala
@@ -121,7 +112,8 @@ export default function AppHeader({ currentView, subViews, onNavigate, previousV
             })}
           </BreadcrumbList>
         </Breadcrumb>
-      ) : <div />}
+      ) : null}
+      </div>
 
       <div className="flex items-center gap-3 shrink-0">
       <Popover open={showNotifDrawer} onOpenChange={setShowNotifDrawer}>
@@ -158,22 +150,31 @@ export default function AppHeader({ currentView, subViews, onNavigate, previousV
               </div>
             ) : (
               preview.map((alert, idx) => {
-                const cfg = TYPE_CONFIG[alert.type] || { icon: Bell, color: 'text-muted-foreground', label: alert.type }
+                const cfg = configDoAlerta(alert.type)
                 const Icon = cfg.icon
                 return (
-                  <div key={idx} className="flex items-start gap-2.5 px-4 py-2.5 border-b border-border last:border-0 hover:bg-muted">
-                    <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${cfg.color}`} />
-                    <div className="min-w-0">
-                      <p className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</p>
-                      <p className="text-xs text-muted-foreground truncate">NF #{alert.invoice_id}{alert.company ? ` · ${alert.company}` : ''}</p>
-                      {alert.timestamp && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <Clock className="w-3 h-3" />
-                          {new Date(alert.timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                        </p>
-                      )}
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => { setShowNotifDrawer(false); onOpenInvoice?.(alert.invoice_id) }}
+                    className="w-full text-left flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-muted transition-colors"
+                  >
+                    <div className={`size-7 rounded-md flex items-center justify-center shrink-0 ${cfg.chip}`}>
+                      <Icon className="w-3.5 h-3.5" />
                     </div>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</p>
+                        <time title={dataHoraCompleta(alert.timestamp)} className="text-[11px] text-muted-foreground whitespace-nowrap">
+                          {tempoRelativo(alert.timestamp)}
+                        </time>
+                      </div>
+                      <p className="text-xs text-foreground line-clamp-2">{resumoDoAlerta(alert)}</p>
+                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        NF {alert.num_doc || `#${alert.invoice_id}`}{alert.company ? ` · ${alert.company}` : ''}
+                      </p>
+                    </div>
+                  </button>
                 )
               })
             )}
@@ -191,54 +192,15 @@ export default function AppHeader({ currentView, subViews, onNavigate, previousV
         </PopoverContent>
       </Popover>
 
-      <Popover open={showProfileMenu} onOpenChange={setShowProfileMenu}>
-        <PopoverTrigger asChild>
-          <button
-            className="flex items-center rounded-full hover:ring-2 hover:ring-accent transition-shadow shrink-0"
-            aria-label="Perfil"
-          >
-            {user?.picture ? (
-              <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
-                {initials}
-              </div>
-            )}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-64 p-0 overflow-hidden">
-          <div className="flex items-center gap-3 p-4 border-b border-border bg-muted">
-            {user?.picture ? (
-              <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full object-cover" />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
-                {initials}
-              </div>
-            )}
-            <div>
-              <div className="font-semibold text-foreground text-sm leading-tight">{user?.name}</div>
-              <div className="text-muted-foreground text-xs mt-0.5">{user?.email}</div>
-            </div>
-          </div>
-          <div className="p-1.5">
-            <Button
-              variant="ghost"
-              onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-              className="w-full flex items-center justify-start gap-2.5 px-3 py-2 h-auto text-sm text-foreground font-medium hover:bg-muted rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4 text-muted-foreground" /> Sair
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-
       <Dialog open={alertsModalOpen} onOpenChange={setAlertsModalOpen}>
-        <DialogContent className="p-0 max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="p-0 gap-0 sm:max-w-3xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-hidden">
           <DialogTitle className="sr-only">Alertas</DialogTitle>
-          <AlertsPanel />
+          <AlertsPanel
+            onOpenInvoice={onOpenInvoice ? (id) => { setAlertsModalOpen(false); onOpenInvoice(id) } : undefined}
+          />
         </DialogContent>
       </Dialog>
       </div>
-    </div>
+    </header>
   )
 }

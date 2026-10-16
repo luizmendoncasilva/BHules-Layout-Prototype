@@ -10,6 +10,7 @@ import {
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue, DatePicker,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   Tabs, TabsList, TabsTrigger, ToggleGroup, ToggleGroupItem,
+  Input, Popover, PopoverTrigger, PopoverContent, buttonVariants,
 } from '@bhubai/bhub-design-system'
 import { api } from '../../api/client'
 import { useCompanies } from '../../hooks/useCompanies'
@@ -389,7 +390,7 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
       const result = await api.batchFeedback({ invoice_ids: selectedInvoiceIds, action: 'approve_all', analista: 'batch-analyst' })
       const count = result.total_processed || selectedInvoiceIds.length
       toast.success(`${count} ${activeTab === 'servicos' ? 'aprovadas' : 'processadas'}`)
-      setSelected({})
+      setSelectedItems(new Set())
       refetch()
     } catch (e) {
       console.error('Batch approve failed:', e)
@@ -547,41 +548,42 @@ export default function BatchAnalysis({ onViewInvoice, startDate: startDateProp,
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input type="text" placeholder="NCM, produto, emitente..." value={search}
+            <Input type="text" placeholder="NCM, produto, emitente..." value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="pl-8 pr-3 py-1.5 w-56 text-sm border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-ring" />
+              className="h-8 pl-8 pr-3 w-56 text-sm md:text-sm" />
           </div>
 
           {/* Company */}
-          <div className="relative">
-            <button onClick={() => setShowCompanyDropdown(!showCompanyDropdown)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md ${companyFilter.length > 0 ? 'border-primary bg-primary/5 text-primary font-medium' : 'border-input text-muted-foreground hover:bg-muted'}`}>
+          <Popover open={showCompanyDropdown} onOpenChange={setShowCompanyDropdown}>
+            {/* PopoverTrigger sem asChild: o Button do DS não repassa ref (React 18),
+                e sem ref o Popper não posiciona o conteúdo. Visual via buttonVariants. */}
+            <PopoverTrigger
+              className={buttonVariants({
+                variant: 'outline',
+                size: 'sm',
+                className: `gap-1.5 font-normal ${companyFilter.length > 0 ? 'border-primary bg-primary/5 text-primary font-medium' : 'text-muted-foreground'}`,
+              })}>
               <Filter className="w-3.5 h-3.5" />
               {companyFilter.length > 0 ? `${companyFilter.length} empresa${companyFilter.length > 1 ? 's' : ''}` : 'Empresa'}
-            </button>
-            {showCompanyDropdown && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowCompanyDropdown(false)} />
-                <div className="absolute top-full left-0 mt-1 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-64 overflow-auto">
-                  <div className="p-2 border-b border-border sticky top-0 bg-popover">
-                    <input type="text" placeholder="Buscar empresa..." value={companySearch}
-                      onChange={(e) => setCompanySearch(e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring" autoFocus />
-                  </div>
-                  {companyFilter.length > 0 && (
-                    <button onClick={() => { setCompanyFilter([]); setPage(1) }}
-                      className="w-full px-3 py-1.5 text-xs text-primary hover:bg-primary/5 text-left">Limpar</button>
-                  )}
-                  {sortedCompanies.map(c => (
-                    <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted cursor-pointer">
-                      <Checkbox checked={companyFilter.includes(c.id)} onCheckedChange={() => toggleCompany(c.id)} />
-                      <span className="text-sm truncate">{c.razao_social || c.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-0 max-h-64 overflow-auto">
+              <div className="p-2 border-b border-border sticky top-0 bg-popover">
+                <Input type="text" placeholder="Buscar empresa..." value={companySearch}
+                  onChange={(e) => setCompanySearch(e.target.value)}
+                  className="h-8 text-sm md:text-sm" autoFocus />
+              </div>
+              {companyFilter.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => { setCompanyFilter([]); setPage(1) }}
+                  className="w-full justify-start rounded-none text-xs text-primary hover:text-primary">Limpar</Button>
+              )}
+              {sortedCompanies.map(c => (
+                <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted cursor-pointer">
+                  <Checkbox checked={companyFilter.includes(c.id)} onCheckedChange={() => toggleCompany(c.id)} />
+                  <span className="text-sm truncate">{c.razao_social || c.name}</span>
+                </label>
+              ))}
+            </PopoverContent>
+          </Popover>
 
           {/* Escrituracao — only for Materiais (NF-e) */}
           {!isNfse && (
@@ -797,13 +799,13 @@ function EditableTextCell({ value, onCommit, mono, edited }) {
   const [draft, setDraft] = useState(value ?? '')
   useEffect(() => { setDraft(value ?? '') }, [value])
   return (
-    <input
+    <Input
       type="text"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { const v = draft.trim(); if (v !== (value ?? '')) onCommit(v) }}
       onClick={(e) => e.stopPropagation()}
-      className={`w-full bg-transparent border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary ${mono ? 'font-mono' : ''} ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
+      className={`h-auto w-full bg-transparent shadow-none rounded px-1.5 py-0.5 text-xs md:text-xs focus-visible:ring-1 focus-visible:ring-primary ${mono ? 'font-mono' : ''} ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
     />
   )
 }
@@ -813,7 +815,7 @@ function EditableAliquotaCell({ value, onCommit, edited }) {
   useEffect(() => { setDraft(value != null ? String(value) : '') }, [value])
   return (
     <div className="relative w-16" onClick={(e) => e.stopPropagation()}>
-      <input
+      <Input
         type="number"
         step="0.01"
         value={draft}
@@ -822,7 +824,7 @@ function EditableAliquotaCell({ value, onCommit, edited }) {
           const parsed = draft === '' ? null : Number(draft)
           if (parsed !== (value ?? null)) onCommit(parsed)
         }}
-        className={`w-full bg-transparent border rounded pl-1.5 pr-4 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
+        className={`h-auto w-full bg-transparent shadow-none rounded pl-1.5 pr-4 py-0.5 text-xs md:text-xs font-mono focus-visible:ring-1 focus-visible:ring-primary ${edited ? 'border-warning-border bg-warning-subtle' : 'border-transparent hover:border-input'}`}
       />
       <span className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
     </div>

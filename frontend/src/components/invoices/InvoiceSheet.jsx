@@ -366,7 +366,7 @@ export default function InvoiceSheet({ invoice, isOpen, onClose, onViewDetails }
       >
         {/* Resize handle */}
         <div
-          className="absolute left-0 top-0 w-1.5 h-full cursor-col-resize bg-transparent hover:bg-neutral-300 active:bg-neutral-400 transition-colors"
+          className="absolute left-0 top-0 w-1.5 h-full cursor-col-resize bg-transparent hover:bg-border active:bg-muted-foreground/40 transition-colors"
           onMouseDown={onMouseDown}
         />
 

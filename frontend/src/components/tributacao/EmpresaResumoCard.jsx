@@ -9,7 +9,7 @@ export function EmpresaResumoCard({ empresa, fatorR }) {
   const totalCodigos = empresa.total_codigos || 0
 
   return (
-    <Card padding="none" className="gap-0 p-5 mb-5">
+    <Card padding="none" className="gap-0 p-5">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Lado Esquerdo: Identificação e Regime */}
         <div className="space-y-1.5">

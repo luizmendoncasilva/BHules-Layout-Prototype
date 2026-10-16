@@ -86,7 +86,7 @@ export function RevisoesExportacaoEmpresa({ revisoes = [], empresaNome, onDecidi
   }
 
   return (
-    <Card padding="none" className="gap-0 overflow-hidden mb-6">
+    <Card padding="none" className="gap-0 overflow-hidden">
       <div className="px-6 py-4 bg-muted border-b border-border flex items-center gap-2.5">
         <div className="p-2 bg-info-subtle text-info-text rounded-md">
           <FileSearch className="w-5 h-5" />

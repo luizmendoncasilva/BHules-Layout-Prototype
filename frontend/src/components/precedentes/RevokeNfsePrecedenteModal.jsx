@@ -1,11 +1,14 @@
 // frontend/src/components/precedentes/RevokeNfsePrecedenteModal.jsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, RotateCcw, Loader2, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
+import { RotateCcw, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { api } from '../../api/client'
 import { useAuth } from '../../auth/useAuth'
 import { formatCnpj } from '../../utils/cnpj'
-import { Button, IconButton } from '@bhubai/bhub-design-system'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+  Button, Textarea, Label, Spinner,
+} from '@bhubai/bhub-design-system'
 
 /**
  * Modal de revogação LÓGICA de um precedente NFS-e v2 (Fase 3).
@@ -35,8 +38,6 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
 
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const dialogRef = useRef(null)
-  const motivoRef = useRef(null)
 
   const precedenteId = target?.precedenteId
   const prestadorCnpj = target?.prestadorCnpj
@@ -89,84 +90,38 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
   const canRevoke = preview?.vigente && !preview?.ja_revogado
   useEffect(() => {
     if (phase === 'CONFIRM' && canRevoke) {
-      const id = setTimeout(() => motivoRef.current?.focus(), 0)
+      const id = setTimeout(() => document.getElementById('revoke-nfse-motivo')?.focus(), 0)
       return () => clearTimeout(id)
     }
   }, [phase, canRevoke])
 
-  // Escape fecha (exceto durante REVOKING). Foco preso no modal (tab loop).
-  useEffect(() => {
-    if (!target) return
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape' && phase !== 'REVOKING') {
-        e.stopPropagation()
-        onClose?.()
-        return
-      }
-      if (e.key === 'Tab' && dialogRef.current) {
-        const focusables = dialogRef.current.querySelectorAll(
-          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        )
-        if (focusables.length === 0) return
-        const first = focusables[0]
-        const last = focusables[focusables.length - 1]
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault()
-          last.focus()
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault()
-          first.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [target, phase, onClose])
-
   if (!target) return null
 
   const motivoEmpty = !motivo.trim()
+  const busy = phase === 'REVOKING'
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center backdrop-blur-sm"
-      onClick={() => { if (phase !== 'REVOKING') onClose?.() }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="revoke-nfse-precedente-title"
-        className="bg-card rounded-2xl shadow-2xl w-[520px] max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open={!!target} onOpenChange={(o) => { if (!o && !busy) onClose?.() }}>
+      <DialogContent
+        showCloseButton={!busy}
+        className="sm:max-w-[520px] max-h-[90vh] p-0 gap-0 overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <DialogHeader className="px-6 py-4 border-b border-border text-left">
+          <div className="flex items-center gap-3 pr-6">
             <div className="w-9 h-9 rounded-lg bg-warning-subtle flex items-center justify-center">
               <RotateCcw className="w-4 h-4 text-warning-text" />
             </div>
             <div>
-              <h3 id="revoke-nfse-precedente-title" className="text-base font-semibold text-foreground">
+              <DialogTitle className="text-base font-semibold text-foreground">
                 Revogar Precedente NFS-e
-              </h3>
-              <p className="text-xs text-muted-foreground">
+              </DialogTitle>
+              <DialogDescription className="text-xs">
                 Reversível — fica registrado na auditoria.
-              </p>
+              </DialogDescription>
             </div>
           </div>
-          {phase !== 'REVOKING' && (
-            <IconButton
-              onClick={onClose}
-              aria-label="Fechar"
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-            >
-              <X className="w-4 h-4" />
-            </IconButton>
-          )}
-        </div>
+        </DialogHeader>
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
@@ -192,7 +147,7 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
 
           {phase === 'LOADING_PREVIEW' && (
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner />
               Carregando impacto da revogação…
             </div>
           )}
@@ -245,21 +200,17 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
 
               {phase === 'CONFIRM' && (
                 <div>
-                  <label
-                    htmlFor="revoke-nfse-motivo"
-                    className="block text-xs font-medium text-foreground mb-1.5"
-                  >
+                  <Label htmlFor="revoke-nfse-motivo" className="block text-xs mb-1.5">
                     Por que revogar? (fica registrado na auditoria)
-                  </label>
-                  <textarea
+                  </Label>
+                  <Textarea
                     id="revoke-nfse-motivo"
-                    ref={motivoRef}
                     value={motivo}
                     onChange={(e) => setMotivo(e.target.value)}
                     rows={3}
                     placeholder="Ex.: precedente contaminado por classificação incorreta na origem."
                     aria-required="true"
-                    className="w-full border border-border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-warning-border focus:border-warning-border"
+                    className="resize-none"
                   />
                   {motivoEmpty && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -273,7 +224,7 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
 
           {phase === 'REVOKING' && (
             <div className="flex items-center gap-3 text-sm text-foreground bg-warning-subtle border border-warning-border rounded-lg p-3">
-              <Loader2 className="w-4 h-4 animate-spin text-warning-text" />
+              <Spinner className="text-warning-text" />
               Revogando e enfileirando reprocesso… <strong>não feche</strong>.
             </div>
           )}
@@ -309,7 +260,7 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-border bg-muted flex justify-end gap-2">
+        <DialogFooter className="px-6 py-3 border-t border-border bg-muted">
           {phase === 'CONFIRM' && canRevoke && (
             <>
               <Button
@@ -355,9 +306,9 @@ export default function RevokeNfsePrecedenteModal({ target, onClose, onRevoked }
               Fechar
             </Button>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

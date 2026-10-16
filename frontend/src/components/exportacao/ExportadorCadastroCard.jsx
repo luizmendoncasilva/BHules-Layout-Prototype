@@ -13,7 +13,6 @@ import {
   Clock,
   User,
   Hash,
-  X,
   Loader2,
   Info,
   DollarSign,
@@ -25,6 +24,19 @@ import {
   Button,
   IconButton,
   Card,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
   Checkbox,
   Input,
   Textarea,
@@ -280,7 +292,7 @@ export function ExportadorCadastroCard({
   }
 
   return (
-    <Card padding="none" className="gap-0 overflow-hidden mb-6">
+    <Card padding="none" className="gap-0 overflow-hidden">
       {/* Cabeçalho */}
       <div className="px-6 py-4 bg-muted border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
@@ -585,27 +597,20 @@ export function ExportadorCadastroCard({
 
       {/* MODAL 1: Salvar / Substituir Cadastro */}
       {showCadastroModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card padding="none" className="gap-0 shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">
+        <Dialog open={showCadastroModal} onOpenChange={(o) => { if (!o && !submitting) setShowCadastroModal(false) }}>
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="text-left">
+              <DialogTitle className="text-sm">
                 {cadastroMode === 'SUBSTITUIR'
                   ? 'Substituir Cadastro de Exportador'
                   : 'Novo Cadastro de Exportador de Serviços'}
-              </h3>
-              <IconButton
-                type="button"
-                aria-label="Fechar"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowCadastroModal(false)}
-                className="text-muted-foreground"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Preencha os dados do enquadramento e o checklist de auditoria fiscal.
+              </DialogDescription>
+            </DialogHeader>
 
-            <form onSubmit={handleSalvarCadastroSubmit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSalvarCadastroSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* 1. Subitem LC 116 */}
                 <div>
@@ -753,11 +758,12 @@ export function ExportadorCadastroCard({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-border flex items-center justify-end gap-2">
+              <DialogFooter className="pt-4 border-t border-border">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={submitting}
                   onClick={() => setShowCadastroModal(false)}
                 >
                   Cancelar
@@ -771,33 +777,26 @@ export function ExportadorCadastroCard({
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{cadastroMode === 'SUBSTITUIR' ? 'Substituir Cadastro' : 'Salvar Cadastro'}</span>
                 </Button>
-              </div>
+              </DialogFooter>
             </form>
-          </Card>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* MODAL 2: Revogar Cadastro */}
       {showRevogarModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card padding="none" className="gap-0 shadow-xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-destructive-subtle">
-              <h3 className="text-sm font-semibold text-destructive-text">
+        <AlertDialog open={showRevogarModal} onOpenChange={(o) => { if (!o && !submitting) setShowRevogarModal(false) }}>
+          <AlertDialogContent className="sm:max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-sm text-destructive-text">
                 Revogar Cadastro de Exportador
-              </h3>
-              <IconButton
-                type="button"
-                aria-label="Fechar"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRevogarModal(false)}
-                className="text-destructive-text"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                Encerra a vigência do cadastro na competência informada.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
 
-            <form onSubmit={handleRevogarCadastroSubmit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleRevogarCadastroSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-foreground mb-1">
                   Última Competência Válida (AAAAMM) *
@@ -828,15 +827,10 @@ export function ExportadorCadastroCard({
                 />
               </div>
 
-              <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowRevogarModal(false)}
-                >
+              <AlertDialogFooter className="pt-3 border-t border-border">
+                <AlertDialogCancel size="sm" disabled={submitting}>
                   Cancelar
-                </Button>
+                </AlertDialogCancel>
                 <Button
                   type="submit"
                   variant="destructive"
@@ -846,33 +840,26 @@ export function ExportadorCadastroCard({
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Confirmar Revogação</span>
                 </Button>
-              </div>
+              </AlertDialogFooter>
             </form>
-          </Card>
-        </div>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* MODAL 3: Adicionar Tomador Conhecido */}
       {showTomadorModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card padding="none" className="gap-0 shadow-xl max-w-lg w-full">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">
+        <Dialog open={showTomadorModal} onOpenChange={(o) => { if (!o && !submitting) setShowTomadorModal(false) }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader className="text-left">
+              <DialogTitle className="text-sm">
                 Adicionar Tomador Estrangeiro Conhecido
-              </h3>
-              <IconButton
-                type="button"
-                aria-label="Fechar"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowTomadorModal(false)}
-                className="text-muted-foreground"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Cadastre o tomador no exterior e a evidência documental da relação.
+              </DialogDescription>
+            </DialogHeader>
 
-            <form onSubmit={handleCriarTomadorSubmit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleCriarTomadorSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-foreground mb-1">
                   Razão Social / Nome no Exterior *
@@ -944,11 +931,12 @@ export function ExportadorCadastroCard({
                 />
               </div>
 
-              <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
+              <DialogFooter className="pt-3 border-t border-border">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={submitting}
                   onClick={() => setShowTomadorModal(false)}
                 >
                   Cancelar
@@ -962,36 +950,26 @@ export function ExportadorCadastroCard({
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Salvar Tomador</span>
                 </Button>
-              </div>
+              </DialogFooter>
             </form>
-          </Card>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* MODAL 4: Revogar Tomador */}
       {showRevogarTomadorModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card padding="none" className="gap-0 shadow-xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-destructive-subtle">
-              <h3 className="text-sm font-semibold text-destructive-text">
+        <AlertDialog open={showRevogarTomadorModal} onOpenChange={(o) => { if (!o && !submitting) setShowRevogarTomadorModal(false) }}>
+          <AlertDialogContent className="sm:max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-sm text-destructive-text">
                 Revogar Tomador Conhecido
-              </h3>
-              <IconButton
-                type="button"
-                aria-label="Fechar"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRevogarTomadorModal(false)}
-                className="text-destructive-text"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
-
-            <form onSubmit={handleRevogarTomadorSubmit} className="p-6 space-y-4 text-xs">
-              <p className="text-muted-foreground">
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
                 Deseja revogar o tomador <strong className="text-foreground">{tomadorToRevoke?.nome}</strong>?
-              </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <form onSubmit={handleRevogarTomadorSubmit} className="space-y-4 text-xs">
 
               <div>
                 <label className="block font-semibold text-foreground mb-1">
@@ -1007,15 +985,10 @@ export function ExportadorCadastroCard({
                 />
               </div>
 
-              <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowRevogarTomadorModal(false)}
-                >
+              <AlertDialogFooter className="pt-3 border-t border-border">
+                <AlertDialogCancel size="sm" disabled={submitting}>
                   Cancelar
-                </Button>
+                </AlertDialogCancel>
                 <Button
                   type="submit"
                   variant="destructive"
@@ -1025,10 +998,10 @@ export function ExportadorCadastroCard({
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Confirmar Revogação</span>
                 </Button>
-              </div>
+              </AlertDialogFooter>
             </form>
-          </Card>
-        </div>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </Card>
   )

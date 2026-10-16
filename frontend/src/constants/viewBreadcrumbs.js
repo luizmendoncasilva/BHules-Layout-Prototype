@@ -1,4 +1,4 @@
-import { INTEGRADAS_TABS } from './integradasTabs'
+import { pathForIntegradas } from './integradasTabs'
 import { SPED_TABS } from './spedTabs'
 import { CRAWLER_TABS, BHUBTAX_TABS } from '../components/layout/Sidebar'
 import { NFC_TABS, pathForNotasFiscais, pathForCte } from './notasFiscaisTabs'
@@ -23,7 +23,7 @@ export const VIEW_BREADCRUMBS = {
   nfse: { label: 'NFS-e — Dashboard e Conferência' },
   'difal-fila': { label: 'Fila DIFAL-SN' },
   'difal-regras': { label: 'Regras DIFAL-SN' },
-  integradas: { label: 'Notas Integradas', subTabs: INTEGRADAS_TABS },
+  integradas: { label: 'Notas Integradas', subPath: pathForIntegradas },
   crawler: { label: 'Legislação', subTabs: CRAWLER_TABS },
   'tax-alerts': { label: 'Alertas Tributários' },
   exceptions: { label: 'Fila de Exceções', parent: 'tax-alerts' },

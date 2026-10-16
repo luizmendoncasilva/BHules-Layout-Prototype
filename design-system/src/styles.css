@@ -12,6 +12,11 @@
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-subtle: var(--sidebar-subtle);
+  --color-sidebar-elevated: var(--sidebar-elevated);
+  --color-sidebar-success: var(--sidebar-success);
+  --color-sidebar-info: var(--sidebar-info);
   --color-sidebar: var(--sidebar);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
@@ -65,6 +70,42 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+}
+
+/* ============================================================
+   Discreet scrollbar utility
+   Thin, low-contrast scrollbar that does not compete with the UI.
+   Auto-adapts to its context via `currentColor`, so it reads well
+   on both the dark sidebar and the light content area.
+
+   WebKit/Blink (Chrome, Edge, Safari): a persistent thin custom bar
+   via ::-webkit-scrollbar. We intentionally do NOT set scrollbar-width
+   here — newer Chromium would otherwise drop the custom bar for the
+   auto-hiding native one. Firefox gets scrollbar-width below.
+   ============================================================ */
+@utility scrollbar-thin {
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: color-mix(in oklab, currentColor 25%, transparent);
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, currentColor 45%, transparent);
+  }
+}
+
+/* Firefox only (engines without ::-webkit-scrollbar support). */
+@supports (scrollbar-width: thin) and (not selector(::-webkit-scrollbar)) {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, currentColor 25%, transparent) transparent;
+  }
 }
 
 /* ============================================================
@@ -303,16 +344,20 @@
   --coral-subtle:          var(--color-pink-50);
   --coral-bold:            var(--color-pink-500);
 
-  /* ── Sidebar ───────────────────────────────────────────── */
-  --sidebar:                      #fafafa;
-  --sidebar-foreground:           #404040;
-  --sidebar-primary:              #171717;
-  --sidebar-primary-foreground:   #fafafa;
-  --sidebar-accent:               #f5f5f5;
-  --sidebar-accent-foreground:    #171717;
-  --sidebar-border:               #e5e5e5;
+  /* ── Sidebar (black bg, light text) ────────────────────── */
+  --sidebar:                      #0a0a0a;
+  --sidebar-foreground:           #a3a3a3;
+  --sidebar-primary:              #fafafa;
+  --sidebar-primary-foreground:   #0a0a0a;
+  --sidebar-accent:               #262626;
+  --sidebar-accent-foreground:    #fafafa;
+  --sidebar-border:               #262626;
   --sidebar-ring:                 #d4d4d4;
-  --sidebar-muted:                #737373;
+  --sidebar-muted:                #737373;  /* secondary text / icons */
+  --sidebar-subtle:               #525252;  /* faint text (hints, dismiss) */
+  --sidebar-elevated:             #171717;  /* raised surfaces (cards) on the sidebar */
+  --sidebar-success:              #10b981;  /* online / positive status dot */
+  --sidebar-info:                 #3f8dff;  /* notification / info indicators */
 
   /* ── Chart Colors ──────────────────────────────────────── */
   --chart-1: #f54a00;
@@ -414,6 +459,7 @@
   /* Monospaced — Regular 16/24, ls: 0 */
   --font-size-mono:     1rem;
   --line-height-mono:   1.5rem;
+
 }
 
 /* ============================================================
@@ -507,16 +553,20 @@
   --coral-subtle:          var(--color-pink-50);
   --coral-bold:            var(--color-pink-500);
 
-  /* ── Sidebar ───────────────────────────────────────────── */
-  --sidebar:                      #0a0a0a;
-  --sidebar-foreground:           #d4d4d4;
+  /* ── Sidebar (slightly deeper black for dark mode) ─────── */
+  --sidebar:                      #050505;
+  --sidebar-foreground:           #a3a3a3;
   --sidebar-primary:              #fafafa;
-  --sidebar-primary-foreground:   #171717;
-  --sidebar-accent:               #171717;
-  --sidebar-accent-foreground:    #f5f5f5;
-  --sidebar-border:               #262626;
+  --sidebar-primary-foreground:   #050505;
+  --sidebar-accent:               #1a1a1a;
+  --sidebar-accent-foreground:    #fafafa;
+  --sidebar-border:               #1a1a1a;
   --sidebar-ring:                 #404040;
-  --sidebar-muted:                #737373;
+  --sidebar-muted:                #737373;  /* secondary text / icons */
+  --sidebar-subtle:               #525252;  /* faint text (hints, dismiss) */
+  --sidebar-elevated:             #101010;  /* raised surfaces (cards) on the sidebar */
+  --sidebar-success:              #10b981;  /* online / positive status dot */
+  --sidebar-info:                 #3f8dff;  /* notification / info indicators */
 
   /* ── Chart Colors ──────────────────────────────────────── */
   --chart-1: #1447e6;
@@ -545,4 +595,93 @@
   --shadow-xl:  0 20px 25px -5px rgba(0, 0, 0, 0.5),
                 0 8px 10px -6px rgba(0, 0, 0, 0.5);
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* ============================================================
+   Sidebar collapse/expand choreography
+   Collapsing: labels fade out first → then width shrinks
+   Expanding:  width expands first → then labels fade in
+   ============================================================ */
+
+/* Width containers: delay on collapse, immediate on expand */
+[data-state="collapsed"] [data-slot="sidebar-gap"],
+[data-state="collapsed"] [data-slot="sidebar-container"] {
+  transition-delay: 100ms;
+}
+[data-state="expanded"] [data-slot="sidebar-gap"],
+[data-state="expanded"] [data-slot="sidebar-container"] {
+  transition-delay: 0ms;
+}
+
+/* Labels & text: immediate on collapse, delay on expand */
+[data-state="collapsed"] [data-slot="sidebar-group-label"] {
+  transition-delay: 0ms;
+  transition-duration: 100ms;
+}
+[data-state="expanded"] [data-slot="sidebar-group-label"] {
+  transition-delay: 100ms;
+  transition-duration: 150ms;
+}
+
+/* Menu button text labels: fade choreography */
+[data-slot="sidebar-menu-button"] > span:last-child {
+  transition: opacity 100ms ease-out;
+}
+[data-state="collapsed"] [data-slot="sidebar-menu-button"] > span:last-child {
+  opacity: 0;
+  transition-delay: 0ms;
+}
+[data-state="expanded"] [data-slot="sidebar-menu-button"] > span:last-child {
+  opacity: 1;
+  transition-delay: 120ms;
+  transition-duration: 150ms;
+}
+
+/* ============================================================
+   Update Card animations
+   ============================================================ */
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes border-rotate {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+@keyframes collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }

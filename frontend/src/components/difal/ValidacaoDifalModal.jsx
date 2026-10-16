@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
-import { Button, Card, Checkbox, IconButton, Input, Textarea } from '@bhubai/bhub-design-system'
+import {
+  Button, Checkbox, Input, Textarea, Label, RadioGroup, RadioGroupItem,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@bhubai/bhub-design-system'
 
 // Modal de veredito RN-25 (DV5-01, T8) — item único ou lote. Mesma casca do
 // ResolveModal da fila de exceções. O autor NÃO é campo: o backend usa o JWT.
@@ -54,18 +56,15 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
   const gravados = (resultados || []).filter((r) => r.status === 200).length
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <Card padding="none" className="gap-0 rounded-2xl shadow-xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold text-foreground">
+    <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader className="text-left">
+          <DialogTitle>
             {lote ? `Validar em lote — ${itens.length} itens` : `Item DIFAL-SN #${item.item_result_id}`}
-          </h3>
-          <IconButton type="button" onClick={onClose} aria-label="Fechar" variant="ghost" size="sm">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </IconButton>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {/* Contexto */}
           <div className="bg-muted rounded-lg p-3 text-sm text-muted-foreground">
             {lote ? (
@@ -89,30 +88,24 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
 
           {/* Veredito */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Veredito</label>
-            <div className="space-y-2">
+            <Label className="block mb-2">Veredito</Label>
+            <RadioGroup value={estado} onValueChange={setEstado} className="gap-2">
               {ESTADOS.map((r) => (
                 <label
                   key={r.value}
+                  onClick={() => setEstado(r.value)}
                   className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    estado === r.value ? 'border-primary bg-primary/5' : 'border-border hover:border-border'
+                    estado === r.value ? 'border-primary bg-primary/5' : 'border-border hover:border-input'
                   }`}
                 >
-                  <input
-                    type="radio"
-                    name="estado"
-                    value={r.value}
-                    checked={estado === r.value}
-                    onChange={() => setEstado(r.value)}
-                    className="mt-0.5"
-                  />
+                  <RadioGroupItem value={r.value} className="mt-0.5" />
                   <div>
                     <div className="text-sm font-medium text-foreground">{r.label}</div>
                     <div className="text-xs text-muted-foreground">{r.desc}</div>
                   </div>
                 </label>
               ))}
-            </div>
+            </RadioGroup>
           </div>
 
           {/* Valor conferido */}
@@ -126,8 +119,9 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
             </label>
           ) : (
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Valor conferido (R$)</label>
+              <Label htmlFor="difal-valor-conferido" className="block mb-1">Valor conferido (R$)</Label>
               <Input
+                id="difal-valor-conferido"
                 type="number"
                 step="0.01"
                 min="0"
@@ -140,10 +134,11 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
 
           {/* Motivo */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
+            <Label htmlFor="difal-motivo" className="block mb-1">
               Motivo {motivoObrigatorio ? <span className="text-destructive-text">(obrigatório para rejeitar)</span> : <span className="text-muted-foreground">(opcional)</span>}
-            </label>
+            </Label>
             <Textarea
+              id="difal-motivo"
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               placeholder={motivoObrigatorio ? 'Por que o cálculo está errado?' : 'Observação da conferência'}
@@ -170,11 +165,12 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <DialogFooter>
             <Button
               type="button"
               onClick={onClose}
-              variant="secondary"
+              disabled={submitting}
+              variant="outline"
             >
               {resultados ? 'Fechar' : 'Cancelar'}
             </Button>
@@ -186,9 +182,9 @@ export default function ValidacaoDifalModal({ itens, onClose, onSubmit, resultad
                 {submitting ? 'Gravando...' : estado === 'REJEITADO' ? 'Rejeitar' : 'Validar'}
               </Button>
             )}
-          </div>
+          </DialogFooter>
         </form>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

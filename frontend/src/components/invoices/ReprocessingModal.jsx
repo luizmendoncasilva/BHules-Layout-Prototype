@@ -153,8 +153,8 @@ function ProcessingPhase({ progress, simulatedStep, invoicePhrase }) {
         </div>
 
         {/* Live activity feed */}
-        <div className="bg-neutral-900 rounded-lg p-3 font-mono text-xs text-green-400 h-20 overflow-hidden relative">
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-neutral-900 z-10 pointer-events-none" />
+        <div className="bg-muted rounded-lg p-3 font-mono text-xs text-success-text h-20 overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-muted z-10 pointer-events-none" />
           <p className="opacity-30">$ bhules-engine --analyze --period</p>
           <p className="opacity-50">[etapa {Math.max(simulatedStep, 1)}] {ENGINE_STEPS[Math.max(simulatedStep - 1, 0)]?.label}... ok</p>
           <p className="animate-pulse">[etapa {simulatedStep + 1}] {invoicePhrase}</p>

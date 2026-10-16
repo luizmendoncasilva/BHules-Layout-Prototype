@@ -5,11 +5,11 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell, DatePicker,
   Checkbox, Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
-  Switch, Button, Badge, Textarea, ToggleGroup, ToggleGroupItem,
+  Switch, Button, Badge, Textarea, ToggleGroup, ToggleGroupItem, Input, Label,
 } from '@bhubai/bhub-design-system'
 import {
   Search, Columns, Eye, ChevronRight, Calendar, Filter, MoreVertical, Download, FileSpreadsheet,
-  X, Check, GripVertical, ThumbsUp, ThumbsDown, Send, Zap, Loader2, Undo2, CheckCheck, Lock, RotateCcw,
+  X, Check, GripVertical, ThumbsUp, ThumbsDown, Send, Zap, Loader2, Undo2, CheckCheck, Lock, RotateCcw, ChevronDown,
 } from 'lucide-react'
 import { api } from '../../api/client'
 import InvoiceSheet from './InvoiceSheet'
@@ -44,6 +44,7 @@ const materiaisColumns = [
   { id: 'statusNfe', label: 'Situação', defaultVisible: true },
   { id: 'statusAnalise', label: 'Status Análise', defaultVisible: true },
   { id: 'erroGrave', label: 'Erro Grave', defaultVisible: true },
+  { id: 'difalPendente', label: 'DIFAL pendente', defaultVisible: true },
   { id: 'integracaoApi', label: 'Integração API', defaultVisible: true },
   { id: 'escrituracaoStatus', label: 'Escrituração', defaultVisible: true },
   { id: 'status', label: 'Motor BHub', defaultVisible: true },
@@ -211,18 +212,28 @@ function formatDate(val) {
 // --- Date-type columns (for filter row) ---
 const dateColumnIds = new Set(['issueDate', 'competenceDate'])
 
+// Painel de filtros: cada coluna filtrável cai num grupo, para a tela ler
+// "o que é a nota / quem emitiu / quem recebeu / em que pé está".
+const FILTER_GROUPS = [
+  { id: 'nota', label: 'Nota', cols: ['number', 'key', 'serie', 'subtype', 'type', 'issueDate', 'competenceDate', 'dataPagamento', 'prazo', 'amount', 'totalRetencoes', 'codigoServico', 'municipioIncidencia', 'issRetido', 'statusNfe'] },
+  { id: 'emitente', label: 'Emitente', cols: ['issuerDocument', 'issuerName', 'regimePrestador'] },
+  { id: 'destinatario', label: 'Destinatário', cols: ['takerDocument', 'takerName'] },
+  { id: 'status', label: 'Status', cols: ['statusAnalise', 'erroGrave', 'difalPendente', 'integracaoApi', 'escrituracaoStatus', 'escrituracaoNfts', 'manifestacao', 'status'] },
+]
+const GRUPO_DA_COLUNA = Object.fromEntries(FILTER_GROUPS.flatMap((g) => g.cols.map((c) => [c, g.id])))
+
 // --- Non-filterable columns ---
 const nonFilterableColumns = new Set(['feedback'])
 
 // --- Select-filter columns (dropdown instead of text input) ---
-const selectFilterColumns = new Set(['status', 'statusAnalise', 'integracaoApi', 'escrituracaoStatus', 'erroGrave', 'statusNfe'])
+const selectFilterColumns = new Set(['status', 'statusAnalise', 'integracaoApi', 'escrituracaoStatus', 'erroGrave', 'difalPendente', 'statusNfe'])
 
 // Colunas cujo filtro é resolvido no BACKEND (PR-A). O useMemo client-side
 // NÃO reaplica essas — senão o refinamento duplo sobre a página carregada
 // esconde linhas que o servidor já filtrou corretamente no dataset inteiro.
 const serverBackedFilterColumns = new Set([
   'number', 'issuerName', 'issuerDocument', 'takerDocument', 'takerName', 'amount',
-  'issueDate', 'statusNfe', 'statusAnalise', 'erroGrave', 'integracaoApi',
+  'issueDate', 'statusNfe', 'statusAnalise', 'erroGrave', 'difalPendente', 'integracaoApi',
   'escrituracaoStatus',
 ])
 
@@ -263,6 +274,13 @@ const INTEGRACAO_API_OPTIONS = [
 const ERRO_GRAVE_OPTIONS = [
   { value: '', label: 'Todos' },
   { value: 'sim', label: 'Com Erro Grave' },
+]
+
+// FIS-1222: nota com DIFAL do Simples aguardando validação/ajuste do analista.
+const DIFAL_PENDENTE_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'sim', label: 'Pendente' },
+  { value: 'nao', label: 'Sem pendência' },
 ]
 
 // Situação da nota (cod_sit, tabela 4.1.2 do SPED) — semântica documentada no
@@ -328,6 +346,7 @@ function getRawCellText(inv, colId, companyName, companiesById) {
     }
     case 'statusAnalise': return inv.status_analise ?? ''
     case 'erroGrave': return inv.categoria_erro_grave ? 'sim' : ''
+    case 'difalPendente': return inv.difal_pendente ? 'sim' : ''
     case 'oportunidades': return inv.oportunidades_count || 0
     case 'escrituracaoStatus': return inv.escrituracao_status || 'PENDENTE'
     case 'subtype': return inv.cod_mod ?? ''
@@ -615,6 +634,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
 
   // Inline column filters
   const [columnFilters, setColumnFilters] = useState({})
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   // Cópia com debounce (PR-A): os filtros de coluna server-side consultam o
   // dataset inteiro no backend. Debouncing evita uma refetch por tecla nos
   // campos de texto (número, emitente, CNPJ, valor).
@@ -746,6 +766,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
       vlDoc: t(cf.amount),
       codSit: t(cf.statusNfe),
       erroGrave: t(cf.erroGrave),
+      difalPendente: t(cf.difalPendente),
       integradoApi: t(cf.integracaoApi),
       escrituracaoStatus: t(cf.escrituracaoStatus),
       startDate: issueDay || undefined,
@@ -776,6 +797,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     destNome: serverColumnFilters.destNome,
     codSit: serverColumnFilters.codSit,
     erroGrave: serverColumnFilters.erroGrave,
+    difalPendente: serverColumnFilters.difalPendente,
     vlDoc: serverColumnFilters.vlDoc,
     integradoApi: serverColumnFilters.integradoApi,
     escrituracaoStatus: serverColumnFilters.escrituracaoStatus,
@@ -1034,6 +1056,15 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
   }, [])
 
   const visibleColumns = columns.filter((c) => c.visible)
+  const colunasFiltraveis = visibleColumns.filter((col) => !nonFilterableColumns.has(col.id))
+  const gruposDeFiltro = [...FILTER_GROUPS, { id: 'outros', label: 'Outros', cols: [] }]
+    .map((g) => ({
+      ...g,
+      colunas: colunasFiltraveis.filter((col) => (GRUPO_DA_COLUNA[col.id] || 'outros') === g.id),
+    }))
+    .filter((g) => g.colunas.length > 0)
+  const filtrosColunaAtivos = Object.values(columnFilters).filter(Boolean).length + (statusAnaliseFilter ? 1 : 0)
+
 
   // FE-03: `useCallback` — hoje a função só é chamada inline no `map` das
   // linhas, então a identidade estável não muda nada por si só; é preparação
@@ -1078,7 +1109,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         // o backend passe a emiti-los.
         if (es === 'ANALISADA') return <StatusBadge status="ANALISADA" />
         if (es === 'CONFIANCA_BAIXA') return <StatusBadge status="CONFIANCA_BAIXA" />
-        return <span className="text-neutral-300">-</span>
+        return <span className="text-muted-foreground/50">-</span>
       }
       case 'status': {
         const es = inv.escrituracao_status
@@ -1134,9 +1165,13 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
           </span>
         )
       }
+      case 'difalPendente': {
+        if (!inv.difal_pendente) return <span className="text-muted-foreground/60">-</span>
+        return <Badge variant="warning">DIFAL pendente</Badge>
+      }
       case 'oportunidades': {
         const count = inv.oportunidades_count || 0
-        if (count === 0) return <span className="text-neutral-300">-</span>
+        if (count === 0) return <span className="text-muted-foreground/50">-</span>
         return (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-subtle text-success-text border border-success-border">
             {count} {count === 1 ? 'item' : 'itens'}
@@ -1205,7 +1240,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         )
       }
       case 'integracaoApi': {
-        if (!inv.integrado_api_em) return <span className="text-neutral-300">-</span>
+        if (!inv.integrado_api_em) return <span className="text-muted-foreground/50">-</span>
         const dtInteg = new Date(inv.integrado_api_em)
         const fmtInteg = dtInteg.toLocaleDateString('pt-BR')
         return (
@@ -1567,67 +1602,96 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
         </div>
       )}
 
-      {/* Column filters — moved up from inside the table header (was a sticky
-          row nested in TableHeader) so all filters live together at the top
-          of the screen instead of scrolling with the list. */}
-      {visibleColumns.some((col) => !nonFilterableColumns.has(col.id)) && (
-        <div className="px-6 py-2.5 border-b border-border bg-muted/40 flex flex-wrap items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          {visibleColumns.map((col) => {
-            if (nonFilterableColumns.has(col.id)) return null
-            return (
-              <div key={`filter-${col.id}`} className="w-40 shrink-0">
-                {col.id === 'statusAnalise' ? (
-                  <Select
-                    value={statusAnaliseFilter || SELECT_ALL_VALUE}
-                    onValueChange={(v) => setStatusAnaliseFilter(v === SELECT_ALL_VALUE ? '' : v)}
-                  >
-                    <SelectTrigger className="w-full h-8 text-xs bg-card">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableStatusAnaliseOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : selectFilterColumns.has(col.id) ? (
-                  <Select
-                    value={columnFilters[col.id] || SELECT_ALL_VALUE}
-                    onValueChange={(v) => setColumnFilters((prev) => ({ ...prev, [col.id]: v === SELECT_ALL_VALUE ? '' : v }))}
-                  >
-                    <SelectTrigger className="w-full h-8 text-xs bg-card">
-                      <SelectValue placeholder={col.label} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(col.id === 'escrituracaoStatus' ? ESCRITURACAO_STATUS_OPTIONS : col.id === 'integracaoApi' ? INTEGRACAO_API_OPTIONS : col.id === 'erroGrave' ? ERRO_GRAVE_OPTIONS : col.id === 'statusNfe' ? STATUS_NFE_OPTIONS : availableStatusOptions).map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : dateColumnIds.has(col.id) ? (
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder={`${col.label} (dd/mm/aaaa)`}
-                      value={columnFilters[col.id] || ''}
-                      onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
-                      className="w-full border border-input rounded pl-2 pr-7 py-1.5 text-xs bg-card"
-                    />
-                    <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+      {/* Filtros por coluna — no topo da tela (não dentro do cabeçalho da tabela),
+          agrupados e com label em todo campo; recolhível para liberar espaço. */}
+      {colunasFiltraveis.length > 0 && (
+        <div className="border-b border-border bg-muted/40">
+          <div className="px-6 py-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFiltrosAbertos((v) => !v)}
+              aria-expanded={filtrosAbertos}
+              className="inline-flex items-center gap-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+            >
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              Filtros por coluna
+              {filtrosColunaAtivos > 0 && <Badge variant="info">{filtrosColunaAtivos} {filtrosColunaAtivos === 1 ? 'ativo' : 'ativos'}</Badge>}
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} />
+            </button>
+            {filtrosColunaAtivos > 0 && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="text-muted-foreground"
+                onClick={() => { setColumnFilters({}); setStatusAnaliseFilter('') }}
+              >
+                <X className="w-3 h-3" /> Limpar filtros
+              </Button>
+            )}
+          </div>
+
+          {filtrosAbertos && (
+            <div className="px-6 pb-4 grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
+              {gruposDeFiltro.map((grupo) => (
+                <fieldset key={grupo.id} className="min-w-0">
+                  <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{grupo.label}</legend>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                    {grupo.colunas.map((col) => {
+                      const fieldId = `filtro-${col.id}`
+                      return (
+                        <div key={fieldId} className="min-w-0 space-y-1">
+                          <Label htmlFor={fieldId} className="block truncate text-xs font-medium text-foreground">{col.label}</Label>
+                          {col.id === 'statusAnalise' ? (
+                            <Select
+                              value={statusAnaliseFilter || SELECT_ALL_VALUE}
+                              onValueChange={(v) => setStatusAnaliseFilter(v === SELECT_ALL_VALUE ? '' : v)}
+                            >
+                              <SelectTrigger id={fieldId} className="w-full h-8 text-xs bg-card">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableStatusAnaliseOptions.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : selectFilterColumns.has(col.id) ? (
+                            <Select
+                              value={columnFilters[col.id] || SELECT_ALL_VALUE}
+                              onValueChange={(v) => setColumnFilters((prev) => ({ ...prev, [col.id]: v === SELECT_ALL_VALUE ? '' : v }))}
+                            >
+                              <SelectTrigger id={fieldId} className="w-full h-8 text-xs bg-card">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(col.id === 'escrituracaoStatus' ? ESCRITURACAO_STATUS_OPTIONS : col.id === 'integracaoApi' ? INTEGRACAO_API_OPTIONS : col.id === 'erroGrave' ? ERRO_GRAVE_OPTIONS : col.id === 'difalPendente' ? DIFAL_PENDENTE_OPTIONS : col.id === 'statusNfe' ? STATUS_NFE_OPTIONS : availableStatusOptions).map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value || SELECT_ALL_VALUE}>{opt.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="relative">
+                              <Input
+                                id={fieldId}
+                                type="text"
+                                placeholder={dateColumnIds.has(col.id) ? 'dd/mm/aaaa' : col.id === 'amount' ? 'Ex.: 1.500,00' : 'Contém…'}
+                                value={columnFilters[col.id] || ''}
+                                onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                                className={`h-8 text-xs bg-card ${dateColumnIds.has(col.id) ? 'pr-7' : ''}`}
+                              />
+                              {dateColumnIds.has(col.id) && (
+                                <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                ) : (
-                  <input
-                    type="text"
-                    placeholder={col.label}
-                    value={columnFilters[col.id] || ''}
-                    onChange={(e) => setColumnFilters((prev) => ({ ...prev, [col.id]: e.target.value }))}
-                    className="w-full border border-input rounded px-2 py-1.5 text-xs bg-card"
-                  />
-                )}
-              </div>
-            )
-          })}
+                </fieldset>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1650,7 +1714,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
     </button>
   ))}
   {statusAnaliseFilter === '' && totalFromServer > 0 && totalFromServer !== Object.entries(statusCounts).filter(([k]) => k !== 'DISPENSADO').reduce((a, [, b]) => a + b, 0) && (
-    <span className="text-xs text-neutral-400 ml-2">
+    <span className="text-xs text-muted-foreground ml-2">
       ({totalFromServer} com filtros atuais)
     </span>
   )}
@@ -1834,7 +1898,7 @@ export default function ListView({ onRowClick, activeTab: activeTabProp, onTabCh
             <div className="flex-1 overflow-y-auto px-4 py-2">
               {columns.map((col) => (
                 <div key={col.id} className="flex items-center gap-4 px-3 py-2.5 hover:bg-muted rounded-lg group transition-colors">
-                  <GripVertical className="w-5 h-5 text-neutral-300 group-hover:text-neutral-400 cursor-grab active:cursor-grabbing" />
+                  <GripVertical className="w-5 h-5 text-muted-foreground/50 group-hover:text-muted-foreground cursor-grab active:cursor-grabbing" />
                   <Checkbox checked={col.visible} onCheckedChange={() => toggleColumn(col.id)} />
                   <span
                     className="text-base text-foreground/80 cursor-pointer select-none font-medium"

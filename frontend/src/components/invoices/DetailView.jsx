@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { ChevronLeft, Check, Pencil, Loader2, X, Save, Undo2, ExternalLink, AlertTriangle, RotateCcw } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
-  Button, IconButton, Tabs, TabsList, TabsTrigger, Badge, Textarea,
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+  Button, IconButton, Tabs, TabsList, TabsTrigger, Badge, Textarea, Spinner,
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue, SelectGroup, SelectLabel,
 } from '@bhubai/bhub-design-system'
 import { useInvoiceItems, useStatusReasons, useInvoiceDetail } from '../../hooks/useInvoices'
@@ -20,6 +22,7 @@ import NfseReinfCrossTab from './NfseReinfCrossTab'
 import EscrituracaoTab from '../escrituracao/EscrituracaoTab'
 import { resumoAprendizado } from '../escrituracao/aprendizado'
 import AuditTab from './AuditTab'
+import DifalTab from './DifalTab'
 import RevokePrecedentesNotasModal from '../precedentes/RevokePrecedentesNotasModal'
 import { useHasRole, ROLE_FISCAL_ADM } from '../../auth/roles'
 import { CST_ICMS, CSOSN_ENTRADA } from '../../constants/classificationOptions'
@@ -145,15 +148,17 @@ function CorrectionModal({ sugestoes, onClose, onSubmit, submitting, naoContribu
     <Sheet open onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
-        className="sm:max-w-2xl p-0 gap-0 flex flex-col relative"
+        // Sem "relative": sobrescreveria o "fixed" do SheetContent (painel caía
+        // no fluxo da página — só o overlay escuro aparecia).
+        className="sm:max-w-2xl p-0 gap-0 flex flex-col"
         showCloseButton={false}
         onPointerDownOutside={(e) => { if (submitting) e.preventDefault() }}
         onEscapeKeyDown={(e) => { if (submitting) e.preventDefault() }}
       >
         {/* Full-screen loading overlay */}
         {submitting && (
-          <div className="absolute inset-0 bg-card/80 z-10 flex flex-col items-center justify-center rounded-lg">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-3" />
+          <div className="absolute inset-0 bg-card/80 z-10 flex flex-col items-center justify-center">
+            <Spinner size="xl" className="text-primary mb-3" />
             <p className="text-sm text-muted-foreground font-medium">{aprendizado ? 'Gravando aprendizado...' : 'Enviando correções...'}</p>
             <p className="text-xs text-muted-foreground mt-1">{aprendizado ? 'A nota não é reprocessada nem reenviada.' : 'Aguarde, o motor está reprocessando a nota.'}</p>
           </div>
@@ -354,7 +359,14 @@ function CorrectionModal({ sugestoes, onClose, onSubmit, submitting, naoContribu
   )
 }
 
-export default function DetailView({ invoice, onBack }) {
+export default function DetailView({ invoice: invoiceProp, onBack }) {
+  // A nota pode chegar só com o id (aberta por alerta, NFS-e, lote): o detalhe
+  // completo vem da API e tem prioridade sobre a linha da lista.
+  const { data: detalheCompleto } = useInvoiceDetail(invoiceProp?.id)
+  const invoice = useMemo(
+    () => ({ ...invoiceProp, ...(detalheCompleto?.invoice || detalheCompleto || {}) }),
+    [invoiceProp, detalheCompleto],
+  )
   const queryClient = useQueryClient()
   const toast = useToast()
   const isNfse = invoice?.cod_mod === 'NFSE' || (invoice?.chave_nfe || '').startsWith('NFSE-')
@@ -411,6 +423,7 @@ export default function DetailView({ invoice, onBack }) {
   const emitCnaesSecundarios = emitCnaes.filter(c => !c.principal)
   const [feedbackMessage, setFeedbackMessage] = useState(null)
   const [confirmingAll, setConfirmingAll] = useState(false)
+  const [confirmEnvioOpen, setConfirmEnvioOpen] = useState(false)
   const [feedbackDone, setFeedbackDone] = useState(false)
   const [showCorrectionModal, setShowCorrectionModal] = useState(false)
   // 'correcao' (feedback comum) ou 'aprendizado' (nota já enviada, PQC-10)
@@ -469,17 +482,12 @@ export default function DetailView({ invoice, onBack }) {
     queryClient.invalidateQueries({ queryKey: ['statusCounts'] })
   }
 
+  // Envio ao Onvio é definitivo (write-once): uma vez enviada, a nota fica
+  // read-only no BHub — correções posteriores só direto no Onvio. A confirmação
+  // é um AlertDialog do DS (antes window.confirm).
   const handleConfirmAll = async () => {
     if (!effectiveEscrituracaoData?.sugestoes?.length) return
-    // Envio ao Onvio é definitivo (write-once): uma vez enviada, a nota fica
-    // read-only no BHub — correções posteriores só direto no Onvio.
-    const ok = window.confirm(
-      'Ao confirmar, a nota vai pro Onvio e NÃO muda mais aqui — ajuste ' +
-      'posterior só direto no Onvio.\n\n' +
-      'O envio é definitivo. Confirme apenas com TODOS os itens revisados.\n\n' +
-      'Deseja enviar ao Onvio agora?'
-    )
-    if (!ok) return
+    setConfirmEnvioOpen(false)
     setConfirmingAll(true)
     try {
       const feedbacks = effectiveEscrituracaoData.sugestoes.map(s => ({
@@ -556,6 +564,9 @@ export default function DetailView({ invoice, onBack }) {
   // Read-only depois do envio ao Onvio (Invoice.ja_enviada_ao_onvio no backend,
   // #394): a correção daria 409. Enquanto o detalhe carrega, vale o integrado_api_em.
   const jaEnviada = invoiceDetail?.invoice?.ja_enviada_ao_onvio ?? !!invoice?.integrado_api_em
+  // FIS-1222: o detalhe recalcula a pendência (e é invalidado pelo ajuste na
+  // aba DIFAL); a linha da lista é só o valor de partida.
+  const difalPendente = invoiceDetail?.invoice?.difal_pendente ?? invoiceDetail?.difal_pendente ?? !!invoice?.difal_pendente
   const estaFechada = feedbackDone || escriturada
   // Itens pendentes = divergências acionáveis (CRITICO/ALERTA). INFORMATIVO é
   // by-design e não bloqueia. Trava de completude do envio: só libera o botão
@@ -568,12 +579,17 @@ export default function DetailView({ invoice, onBack }) {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <IconButton aria-label="Voltar" variant="ghost" onClick={onBack}>
+      {/* flex-wrap: quando os botões não cabem ao lado do título, descem para a
+          linha de baixo; o título trunca (min-w-0) em vez de quebrar em várias linhas. */}
+      <div className="bg-card border-b border-border px-6 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex items-center gap-4 min-w-0 flex-1 basis-80">
+          <IconButton aria-label="Voltar" variant="ghost" onClick={onBack} className="shrink-0">
             <ChevronLeft className="w-6 h-6" />
           </IconButton>
-          <h1 className="text-lg font-semibold text-foreground">
+          <h1
+            className="text-lg font-semibold text-foreground truncate min-w-0"
+            title={`${docLabel} no ${invoice.num_doc || invoice.id} - ${invoice.emit_razao_social || 'Emitente'}`}
+          >
             {docLabel} no {invoice.num_doc || invoice.id} - {invoice.emit_razao_social || 'Emitente'}
           </h1>
           {isNfse && <Badge variant="secondary">NFS-e</Badge>}
@@ -586,7 +602,7 @@ export default function DetailView({ invoice, onBack }) {
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3 ml-auto">
           {(invoice.chave_nfe || invoice.num_doc) && (
             <Button
               variant="outline"
@@ -641,7 +657,7 @@ export default function DetailView({ invoice, onBack }) {
           {effectiveEscrituracaoData && !estaFechada && (
             <Button
               variant="success"
-              onClick={handleConfirmAll}
+              onClick={() => setConfirmEnvioOpen(true)}
               disabled={confirmingAll || hasItensPendentes}
               title={hasItensPendentes
                 ? 'Há itens pendentes (divergências CRÍTICO/ALERTA). Resolva-os com "Corrigir" antes de confirmar e escriturar.'
@@ -790,9 +806,9 @@ export default function DetailView({ invoice, onBack }) {
 
       {/* Status reasons — show why the note was blocked/flagged */}
       {/* max-h-[25vh]: viewport-relative cap intentionally kept (não há token de escala p/ vh) */}
-      {statusReasons && (
+      {(statusReasons || difalPendente) && (
         <div className="bg-card border-b border-border px-6 py-4 max-h-[25vh] overflow-y-auto">
-          <StatusReasons data={statusReasons} />
+          <StatusReasons data={statusReasons} difalPendente={difalPendente} />
         </div>
       )}
 
@@ -819,6 +835,10 @@ export default function DetailView({ invoice, onBack }) {
                   <>
                     <TabsTrigger value="escrituracao" className="px-3">Escrituracao</TabsTrigger>
                     <TabsTrigger value="espelho" className="px-3">Espelho NF-e</TabsTrigger>
+                    <TabsTrigger value="difal" className="px-3 gap-1.5">
+                      DIFAL
+                      {difalPendente && <span className="size-1.5 rounded-full bg-warning" aria-label="pendente" />}
+                    </TabsTrigger>
                     <TabsTrigger value="auditoria" className="px-3">Auditoria</TabsTrigger>
                   </>
                 )}
@@ -890,6 +910,8 @@ export default function DetailView({ invoice, onBack }) {
               ) : (
                 <DanfeTab invoice={invoice} items={items} />
               )
+            ) : activeTab === 'difal' ? (
+              <DifalTab key={invoice.id} invoice={invoice} />
             ) : activeTab === 'auditoria' ? (
               <AuditTab invoice={invoice} />
             ) : null}
@@ -910,6 +932,30 @@ export default function DetailView({ invoice, onBack }) {
           modo={modoCorrecao}
         />
       )}
+
+      {/* Confirmar e Escriturar: envio ao Onvio é definitivo */}
+      <AlertDialog open={confirmEnvioOpen} onOpenChange={setConfirmEnvioOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Enviar ao Onvio agora?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Ao confirmar, a nota vai pro Onvio e <strong className="text-foreground">não muda mais aqui</strong> —
+                  ajuste posterior só direto no Onvio.
+                </p>
+                <p>O envio é definitivo. Confirme apenas com <strong className="text-foreground">todos os itens revisados</strong>.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction variant="success" onClick={handleConfirmAll}>
+              <Check className="w-4 h-4" /> Confirmar e Escriturar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <RevokePrecedentesNotasModal
         invoiceIds={revogandoPrecedentes ? [invoice.id] : null}

@@ -125,7 +125,7 @@ export const api = {
     }),
 
   // Invoices
-  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType, regimeTributario, numDoc, emitNome, destNome, codSit, erroGrave, vlDoc, integradoApi, onlyIncoming = false } = {}) => {
+  getInvoices: ({ companyIds, companyId, page = 1, size = 100, search, status, source, codMod, indEmit, indOper, startDate, endDate, escrituracaoStatus, statusAnalise, cnpjEmit, cnpjDest, problemType, regimeTributario, numDoc, emitNome, destNome, codSit, erroGrave, difalPendente, vlDoc, integradoApi, onlyIncoming = false } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -161,6 +161,7 @@ export const api = {
     if (destNome) params.set('dest_nome', destNome)
     if (codSit) params.set('cod_sit', codSit)
     if (erroGrave) params.set('erro_grave', erroGrave)
+    if (difalPendente) params.set('difal_pendente', difalPendente)
     if (vlDoc) params.set('vl_doc', vlDoc)
     if (integradoApi) params.set('integrado_api', integradoApi)
     // No oficial only_incoming=true é o default; no protótipo a segregação
@@ -191,7 +192,7 @@ export const api = {
     return request(`/invoices/nfse-prestados/grupos?${params}`)
   },
 
-  getIntegratedInvoices: ({ companyIds, companyId, page = 1, size = 50, search, codMod, indEmit, startDate, endDate } = {}) => {
+  getIntegratedInvoices: ({ companyIds, companyId, page = 1, size = 50, search, codMod, indEmit, indOper, startDate, endDate } = {}) => {
     const params = new URLSearchParams()
     if (companyIds && companyIds.length > 0) params.set('company_ids', companyIds.join(','))
     else if (companyId) params.set('company_id', companyId)
@@ -200,6 +201,7 @@ export const api = {
     if (search) params.set('search', search)
     if (codMod) params.set('cod_mod', codMod)
     if (indEmit) params.set('ind_emit', indEmit)
+    if (indOper) params.set('ind_oper', indOper)
     if (startDate) params.set('start_date', startDate)
     if (endDate) params.set('end_date', endDate)
     return request(`/invoices?${params}`)
@@ -921,6 +923,13 @@ export const api = {
     request(`/difal-sn/item/${itemResultId}/validacao`, {
       method: 'POST',
       body: JSON.stringify({ estado, valor_conferido, motivo }),
+    }),
+
+  // FIS-1222 — ajuste do analista por item (append-only; autor vem do JWT).
+  ajustarDifalSnItem: (itemResultId, { decisao_conferida, motivo, valor_conferido }) =>
+    request(`/difal-sn/item/${itemResultId}/ajuste`, {
+      method: 'POST',
+      body: JSON.stringify({ decisao_conferida, motivo, valor_conferido }),
     }),
 
   validarDifalSnLote: ({ itens, usar_valor_calculado = false }) =>

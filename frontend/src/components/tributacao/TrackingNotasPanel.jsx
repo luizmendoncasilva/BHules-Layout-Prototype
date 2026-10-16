@@ -3,7 +3,11 @@ import { X, ListChecks, Copy, Check, AlertTriangle, ExternalLink, RefreshCw } fr
 import {
   Badge,
   Button,
-  Card,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   IconButton,
   Spinner,
   TableBody,
@@ -155,13 +159,6 @@ export default function TrackingNotasPanel({
     carregar()
   }, [open, abaInicial, carregar])
 
-  useEffect(() => {
-    if (!open) return undefined
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   const abrirNota = async (nota) => {
     if (!nota.invoice_id || !onOpenInvoice) return
     setAbrindoId(nota.invoice_id)
@@ -185,31 +182,24 @@ export default function TrackingNotasPanel({
   const abaDependeDaOrigem = aba === 'so_origem' || aba === 'em_ambos'
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center backdrop-blur-sm p-4"
-      onClick={() => onClose?.()}
-    >
-      <Card
-        padding="none"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="tracking-notas-title"
-        className="gap-0 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-6xl max-h-[88vh] p-0 gap-0 rounded-2xl overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+        <DialogHeader className="px-6 py-4 border-b border-border flex-row items-center justify-between text-left">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
               <ListChecks className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h3 id="tracking-notas-title" className="text-base font-semibold text-foreground">
+              <DialogTitle className="text-base font-semibold text-foreground">
                 {canal?.nome || 'Origem'} · competência {formatCompetencia(competencia)}
-              </h3>
-              <p className="text-xs text-muted-foreground">
+              </DialogTitle>
+              <DialogDescription className="text-xs">
                 Conciliação por chave entre a origem e o BHules.
-              </p>
+              </DialogDescription>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -236,7 +226,7 @@ export default function TrackingNotasPanel({
               <X className="w-4 h-4" />
             </IconButton>
           </div>
-        </div>
+        </DialogHeader>
 
         {/* Abas */}
         <div className="px-6 border-b border-border flex items-center gap-1">
@@ -244,21 +234,26 @@ export default function TrackingNotasPanel({
             const total = dados?.[a.id]?.total
             const ativa = a.id === aba
             return (
-              <button
+              <Button
                 key={a.id}
                 type="button"
+                variant="ghost"
+                aria-pressed={ativa}
                 onClick={() => setAba(a.id)}
-                className={`px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  ativa ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                className={`h-auto rounded-none px-3 py-2.5 text-sm font-medium border-b-2 -mb-px hover:bg-transparent ${
+                  ativa ? 'border-primary text-primary hover:text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {a.label}
                 {typeof total === 'number' && (
-                  <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded ${ativa ? 'bg-primary/10' : 'bg-muted'}`}>
+                  <Badge
+                    variant="secondary"
+                    className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded ${ativa ? 'bg-primary/10 text-primary' : 'bg-muted text-foreground'}`}
+                  >
                     {total}
-                  </span>
+                  </Badge>
                 )}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -374,7 +369,7 @@ export default function TrackingNotasPanel({
             </>
           )}
         </div>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

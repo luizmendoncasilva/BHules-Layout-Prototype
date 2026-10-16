@@ -37,7 +37,7 @@ function formatCompetenciaDisplay(comp) {
 
 export function TabelaHistoricoAlteracoes({ historico = [] }) {
   return (
-    <Card padding="none" className="gap-0 overflow-hidden mb-6">
+    <Card padding="none" className="gap-0 overflow-hidden">
       {/* Cabeçalho */}
       <div className="px-6 py-4 border-b border-border bg-muted flex items-center justify-between">
         <div className="flex items-center gap-2.5">

@@ -1,5 +1,6 @@
 import { mockRoute, paramsOf } from './registry'
 import { MOCK_COMPANIES } from './companies'
+import { getInvoiceItemsById } from './invoices'
 
 // Fixture do DIFAL do Simples Nacional (LC 123/2006, art. 13, §1º, XIII, "h"):
 // fila de validação da Célula (DifalSnFila — keyset por cursor, sem total),
@@ -216,6 +217,8 @@ mockRoute(/^\/difal-sn\/revisao$/, 'GET', (path) => {
 mockRoute(/^\/difal-sn\/invoice\/(\d+)$/, 'GET', (_path, match) => {
   const nota = NOTAS[Number(match[1])]
   if (nota) return nota
+  const avaliacao = AVALIACOES[Number(match[1])]
+  if (avaliacao) return { ...avaliacao, difal_pendente: pendente(avaliacao), itens: avaliacao.itens.map((i) => ({ ...i })) }
   return {
     invoice_id: Number(match[1]),
     avaliacao_status: 'NAO_AVALIADA',
@@ -332,4 +335,108 @@ mockRoute(/^\/difal-sn\/regras$/, 'GET', (path) => {
       .filter((r) => !instituto || r.instituto === instituto)
       .filter((r) => !estado || r.estado_governanca === estado),
   }
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aba DIFAL da nota (FIS-1222): avaliação por item das notas da listagem
+// (mocks/invoices.js), ajuste do analista e o selo "DIFAL pendente".
+// Pendente = algum item que cobra (COLLECT) ou ficou bloqueado (BLOCKED)
+// ainda sem ajuste do analista.
+// ─────────────────────────────────────────────────────────────────────────
+const AVALIACOES = {}
+
+const CENARIOS = [
+  { decision: 'COLLECT', eligibility_status: 'ELEGIVEL', policy: 'DEDUZ_ICMS_ORIGEM' },
+  { decision: 'DO_NOT_COLLECT', eligibility_status: 'REVENDA', policy: null },
+  { decision: 'COLLECT', eligibility_status: 'ELEGIVEL', policy: 'BASE_UNICA' },
+  { decision: 'BLOCKED', eligibility_status: 'FINALIDADE_INDEFINIDA', policy: null },
+  { decision: 'NOT_ELIGIBLE', eligibility_status: 'OPERACAO_INTERNA', policy: null },
+]
+
+// Só notas de compra (modelo 55, recebidas, entrada) de empresas do Simples
+// têm avaliação — e, entre elas, uma em cada três, para a coluna variar.
+export function avaliarDifalDaNota(inv) {
+  if (!inv || inv.cod_mod !== '55' || inv.ind_emit !== '1' || inv.ind_oper !== '0') return null
+  if (inv.id % 3 !== 0) return null
+  if (AVALIACOES[inv.id]) return AVALIACOES[inv.id]
+  const ufDest = inv.dest_uf || 'SP'
+  const aliqInterna = ALIQ_INTERNA[ufDest] || 18
+  const aliqInter = 12
+  const itens = getInvoiceItemsById(inv.id).slice(0, 4).map((it, k) => {
+    const cen = CENARIOS[(inv.id + k) % CENARIOS.length]
+    const base = money(it.vl_item)
+    const cobra = cen.decision === 'COLLECT'
+    const baseRecomposta = cobra && cen.policy === 'DEDUZ_ICMS_ORIGEM'
+      ? money((base * (1 - aliqInter / 100)) / (1 - aliqInterna / 100))
+      : null
+    const total = cobra ? money((baseRecomposta ?? base) * aliqInterna / 100 - base * aliqInter / 100) : 0
+    const finalidade = cen.eligibility_status === 'REVENDA' ? 'REVENDA' : k % 2 ? 'ATIVO_IMOBILIZADO' : 'USO_CONSUMO'
+    // A nota 6 (e múltiplas de 4) já vem com um item ajustado, para a coluna
+    // "Analista" mostrar como fica.
+    const revisao = cobra && inv.id % 4 === 0 && k === 0
+      ? { estado: 'AJUSTADO', decisao_conferida: 'COLLECT', valor_conferido: String(total), motivo: 'Conferido com a guia GNRE paga pelo fornecedor', autor: 'juliana.pereira@bhub.ai', created_at: '2026-10-10T14:20:00Z' }
+      : null
+    return {
+      item_result_id: 70000 + inv.id * 10 + k,
+      invoice_item_id: it.num_item,
+      descricao: it.descr_compl,
+      ncm: it.ncm,
+      decision: cen.decision,
+      eligibility_status: cen.eligibility_status,
+      base_original: base,
+      base_recomposta: baseRecomposta,
+      total_item: total,
+      rule_code: cen.decision === 'NOT_ELIGIBLE' ? null : ruleCode(ufDest, finalidade),
+      rule_version: 2,
+      variante_deducao: cen.policy,
+      memoria_calculo: {
+        finalidade,
+        uf_origem: inv.emit_uf,
+        uf_destino: ufDest,
+        aliq_interna: aliqInterna,
+        aliq_interestadual: aliqInter,
+        valor_produto: base,
+        icms_origem: money(base * aliqInter / 100),
+        base_recomposta: baseRecomposta,
+        difal: total,
+        deducao_origem: cen.policy ? { policy: cen.policy } : null,
+      },
+      revisao,
+    }
+  })
+  const temBloqueio = itens.some((i) => i.decision === 'BLOCKED')
+  AVALIACOES[inv.id] = {
+    invoice_id: inv.id,
+    avaliacao_status: temBloqueio ? 'PARCIAL' : 'AVALIADA',
+    motivo_principal: temBloqueio
+      ? 'Item sem finalidade definida — decisão do analista'
+      : 'Compra interestadual de empresa do Simples Nacional',
+    itens,
+  }
+  return AVALIACOES[inv.id]
+}
+
+function pendente(avaliacao) {
+  return avaliacao.itens.some((i) => (i.decision === 'COLLECT' || i.decision === 'BLOCKED') && !i.revisao)
+}
+
+export function difalPendenteDaNota(inv) {
+  const avaliacao = avaliarDifalDaNota(inv)
+  return avaliacao ? pendente(avaliacao) : false
+}
+
+mockRoute(/^\/difal-sn\/item\/(\d+)\/ajuste$/, 'POST', (_path, match, rawBody) => {
+  const body = bodyOf(rawBody)
+  const id = Number(match[1])
+  const item = Object.values(AVALIACOES).flatMap((a) => a.itens).find((i) => i.item_result_id === id)
+  if (!item) return { ok: false, detail: 'Item não encontrado' }
+  item.revisao = {
+    estado: 'AJUSTADO',
+    decisao_conferida: body.decisao_conferida,
+    valor_conferido: body.valor_conferido ?? null,
+    motivo: body.motivo,
+    autor: 'analista-prototipo@bhub.ai',
+    created_at: AGORA(),
+  }
+  return { ok: true, item_result_id: id, revisao: item.revisao }
 })

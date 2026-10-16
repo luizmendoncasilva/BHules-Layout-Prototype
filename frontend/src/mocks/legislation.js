@@ -172,6 +172,18 @@ mockRoute(/^\/legislation\/sync\/status$/, 'GET', (path) => {
 
 mockRoute('/legislation/sync', 'POST', () => ({ ok: true }))
 
+// Assistente (ChatWidget → useChat): resposta fixa do protótipo.
+mockRoute('/chat', 'POST', () => ({
+  answer: 'Resposta de exemplo do protótipo (sem backend). No ambiente real, o assistente consulta a base de legislação indexada e cita as fontes.',
+  sources: [{
+    source_label: 'RICMS/SP',
+    artigo: 'Art. 61',
+    similarity: 0.82,
+    excerpt: 'Disciplina o crédito do imposto relativo a mercadoria destinada a comercialização.',
+  }],
+  model_used: 'mock',
+}))
+
 mockRoute(/^\/legislation\/sources\/(\d+)$/, 'PATCH', () => ({ ok: true }))
 
 mockRoute(/^\/legislation\/articles$/, 'GET', (path) => {

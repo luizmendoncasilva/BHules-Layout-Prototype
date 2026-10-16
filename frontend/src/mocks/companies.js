@@ -159,9 +159,24 @@ mockRoute(/^\/companies\/(\d+)\/toggle-active$/, 'PATCH', () => ({ ok: true }))
 
 mockRoute(/^\/companies\/(\d+)\/type-flags$/, 'PATCH', () => ({ ok: true }))
 
-mockRoute(/^\/companies\/(\d+)\/delete-preview$/, 'GET', () => ({
+// Formato lido por DeleteCompanyModal (parents/children/total_rows). O formato
+// antigo (cascade_counts) quebrava a tela inteira em "Excluir empresa":
+// preview.total_rows.toLocaleString em undefined.
+const DELETE_PREVIEW = {
   can_delete: true,
-  cascade_counts: { invoices: 12, sped_files: 3 },
-}))
+  parents: { companies: 1, invoices: 12, sped_files: 3, reinf_files: 1 },
+  children: {
+    invoice_items: 58,
+    validation_results: 41,
+    escrituracao_feedbacks: 9,
+    audit_events: 37,
+    precedentes: 4,
+    difal_itens: 6,
+  },
+}
+DELETE_PREVIEW.total_rows = [...Object.values(DELETE_PREVIEW.parents), ...Object.values(DELETE_PREVIEW.children)]
+  .reduce((s, n) => s + n, 0)
 
-mockRoute(/^\/companies\/(\d+)$/, 'DELETE', () => ({ ok: true }))
+mockRoute(/^\/companies\/(\d+)\/delete-preview$/, 'GET', () => DELETE_PREVIEW)
+
+mockRoute(/^\/companies\/(\d+)$/, 'DELETE', () => ({ ok: true, total_deleted: DELETE_PREVIEW.total_rows, duration_seconds: 1.4 }))

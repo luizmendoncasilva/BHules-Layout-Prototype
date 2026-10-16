@@ -44,10 +44,10 @@ export function useStatusCounts({ codMod, startDate, endDate, companyIds, indEmi
   })
 }
 
-export function useIntegratedInvoices({ companyIds, companyId, page = 1, size = 50, search, codMod, indEmit, startDate, endDate } = {}) {
+export function useIntegratedInvoices({ companyIds, companyId, page = 1, size = 50, search, codMod, indEmit, indOper, startDate, endDate } = {}) {
   return useQuery({
-    queryKey: ['integratedInvoices', { companyIds, companyId, page, size, search, codMod, indEmit, startDate, endDate }],
-    queryFn: () => api.getIntegratedInvoices({ companyIds, companyId, page, size, search, codMod, indEmit, startDate, endDate }),
+    queryKey: ['integratedInvoices', { companyIds, companyId, page, size, search, codMod, indEmit, indOper, startDate, endDate }],
+    queryFn: () => api.getIntegratedInvoices({ companyIds, companyId, page, size, search, codMod, indEmit, indOper, startDate, endDate }),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   })

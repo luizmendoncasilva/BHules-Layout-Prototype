@@ -149,7 +149,7 @@ export default function DeleteCompanyModal({ company, onClose, onDeleted }) {
               <div className="text-sm text-foreground">
                 <p className="font-medium text-success-text">Empresa apagada.</p>
                 <p className="text-muted-foreground mt-1">
-                  <strong>{result.total_deleted.toLocaleString('pt-BR')}</strong> registros
+                  <strong>{(result.total_deleted ?? 0).toLocaleString('pt-BR')}</strong> registros
                   removidos em {result.duration_seconds}s.
                 </p>
               </div>
@@ -244,7 +244,7 @@ function PreviewBody({ preview }) {
       <div className="pt-2 border-t border-border flex justify-between">
         <span className="text-sm font-medium text-foreground">Total</span>
         <span className="text-sm font-semibold text-foreground font-mono">
-          {preview.total_rows.toLocaleString('pt-BR')} registros
+          {(preview.total_rows ?? 0).toLocaleString('pt-BR')} registros
         </span>
       </div>
     </div>

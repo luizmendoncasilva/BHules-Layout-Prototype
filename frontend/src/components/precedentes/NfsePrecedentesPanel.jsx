@@ -1,9 +1,12 @@
 // frontend/src/components/precedentes/NfsePrecedentesPanel.jsx
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, AlertTriangle, Scale, RotateCcw, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, Scale, RotateCcw, CheckCircle2 } from 'lucide-react'
 import { api } from '../../api/client'
 import { formatCnpj } from '../../utils/cnpj'
-import { Badge, Button, Card, IconButton } from '@bhubai/bhub-design-system'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+  Badge, Button, Spinner,
+} from '@bhubai/bhub-design-system'
 
 /**
  * Painel (modal) com os precedentes NFS-e v2 vigentes/revogados de um
@@ -40,47 +43,28 @@ export default function NfsePrecedentesPanel({
   const precedentes = data?.precedentes || []
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <Card
-        padding="none"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="nfse-precedentes-panel-title"
-        className="gap-0 shadow-2xl w-[640px] max-h-[80vh] overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.() }}>
+      <DialogContent className="sm:max-w-[640px] max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b border-border text-left">
+          <div className="flex items-center gap-3 pr-6">
             <div className="w-9 h-9 rounded-lg bg-warning-subtle flex items-center justify-center">
               <Scale className="w-4 h-4 text-warning-text" />
             </div>
             <div>
-              <h3 id="nfse-precedentes-panel-title" className="text-base font-semibold text-foreground">
+              <DialogTitle className="text-base font-semibold text-foreground">
                 Precedentes NFS-e do prestador
-              </h3>
-              {prestadorCnpj && (
-                <p className="text-xs text-muted-foreground font-mono">{formatCnpj(prestadorCnpj)}</p>
-              )}
+              </DialogTitle>
+              <DialogDescription className={prestadorCnpj ? 'text-xs font-mono' : 'sr-only'}>
+                {prestadorCnpj ? formatCnpj(prestadorCnpj) : 'Precedentes vigentes e revogados do prestador'}
+              </DialogDescription>
             </div>
           </div>
-          <IconButton
-            onClick={onClose}
-            aria-label="Fechar"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
-          >
-            <X className="w-4 h-4" />
-          </IconButton>
-        </div>
+        </DialogHeader>
 
         <div className="px-6 py-4 overflow-y-auto flex-1 space-y-2">
           {isLoading && (
             <div className="flex items-center gap-3 text-sm text-muted-foreground py-4">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner />
               Carregando precedentes…
             </div>
           )}
@@ -157,7 +141,7 @@ export default function NfsePrecedentesPanel({
           })}
         </div>
 
-        <div className="px-6 py-3 border-t border-border bg-muted flex justify-end">
+        <DialogFooter className="px-6 py-3 border-t border-border bg-muted">
           <Button
             variant="ghost"
             onClick={onClose}
@@ -165,8 +149,8 @@ export default function NfsePrecedentesPanel({
           >
             Fechar
           </Button>
-        </div>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

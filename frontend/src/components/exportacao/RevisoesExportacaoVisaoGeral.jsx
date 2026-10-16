@@ -8,6 +8,11 @@ import {
   Button,
   Card,
   Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
   Table,
   TableHeader,
   TableBody,
@@ -15,6 +20,9 @@ import {
   TableHead,
   TableCell,
 } from '@bhubai/bhub-design-system'
+
+// Radix Select não aceita SelectItem value="" — sentinela convertida para '' no estado.
+const TODAS = '__all__'
 
 /**
  * Visão geral das revisões de exportação (Tela AC2): todas as abertas, ordenadas por
@@ -65,7 +73,6 @@ export function RevisoesExportacaoVisaoGeral({ companies = [], initialCompanyId 
     }
   }
 
-  const select = 'rounded-md border border-input bg-card px-2 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring'
   const abertas = revisoes.filter(ehAberta).length
 
   return (
@@ -79,12 +86,17 @@ export function RevisoesExportacaoVisaoGeral({ companies = [], initialCompanyId 
           <span className="text-muted-foreground/60">|</span>
           <div className="flex items-center gap-1.5">
             <Building2 className="w-4 h-4 text-muted-foreground" />
-            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className={`${select} max-w-xs`}>
-              <option value="">Todas as empresas</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.razao_social || c.name || c.cnpj}</option>
-              ))}
-            </select>
+            <Select value={companyId ? String(companyId) : TODAS} onValueChange={(v) => setCompanyId(v === TODAS ? '' : v)}>
+              <SelectTrigger size="sm" className="max-w-xs text-xs font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODAS}>Todas as empresas</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.razao_social || c.name || c.cnpj}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -92,10 +104,15 @@ export function RevisoesExportacaoVisaoGeral({ companies = [], initialCompanyId 
           </div>
           <div className="flex items-center gap-1.5">
             <Filter className="w-4 h-4 text-muted-foreground" />
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className={select}>
-              {Object.entries(STATUS_REVISAO).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              <option value="">Todas as situações</option>
-            </select>
+            <Select value={status || TODAS} onValueChange={(v) => setStatus(v === TODAS ? '' : v)}>
+              <SelectTrigger size="sm" className="text-xs font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(STATUS_REVISAO).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                <SelectItem value={TODAS}>Todas as situações</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={carregar} disabled={loading}>

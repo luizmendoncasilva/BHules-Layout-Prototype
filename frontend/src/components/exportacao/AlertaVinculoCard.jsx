@@ -1,10 +1,9 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
-  Users,
   Clock,
-  UserCheck,
+  Mail,
   ShieldAlert,
   Loader2,
 } from 'lucide-react'
@@ -21,11 +20,11 @@ import {
 } from '@bhubai/bhub-design-system'
 
 const VINC_PREST_MAP = {
-  '1': '1 - Matriz no exterior',
-  '2': '2 - Filial ou Sucursal no exterior',
-  '3': '3 - Coligada no exterior',
-  '4': '4 - Controladora no exterior',
-  '5': '5 - Controlada no exterior',
+  '1': 'Matriz no exterior',
+  '2': 'Filial ou sucursal no exterior',
+  '3': 'Coligada no exterior',
+  '4': 'Controladora no exterior',
+  '5': 'Controlada no exterior',
 }
 
 function formatCompetenciaDisplay(comp) {
@@ -53,6 +52,18 @@ function formatDate(isoStr) {
   }
 }
 
+// Destinatário pode vir como { destino, canal } (alerta_destinatario) ou só o
+// endereço — o canal, nesse caso, é deduzido (e-mail se tiver @).
+function normalizarDestinatario(d) {
+  if (!d) return null
+  if (typeof d === 'string') return { destino: d, canal: 'EMAIL' }
+  const destino = d.destino || d.email || d.endereco
+  if (!destino) return null
+  return { destino, canal: (d.canal || 'EMAIL').toUpperCase() }
+}
+
+const TH = 'px-4 py-2.5 h-auto text-xs font-semibold uppercase tracking-wider text-muted-foreground'
+
 export function AlertaVinculoCard({
   alertas = [],
   companyId,
@@ -62,14 +73,26 @@ export function AlertaVinculoCard({
   const [markingId, setMarkingId] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
 
+  // Abertos primeiro; dentro de cada grupo, competência mais recente no topo.
+  const ordenados = useMemo(
+    () => [...(alertas || [])].sort((a, b) =>
+      (a.status === 'ABERTO' ? 0 : 1) - (b.status === 'ABERTO' ? 0 : 1)
+      || String(b.competencia).localeCompare(String(a.competencia))),
+    [alertas],
+  )
+
   if (!alertas || alertas.length === 0) {
     return null
   }
 
+  const abertos = alertas.filter((a) => a.status === 'ABERTO').length
+
   // "Sem dono" = nenhum alerta_destinatario vivo do tipo EXPORTACAO_VINCULO_SOCIETARIO
   // (design §5.6). O nome do destinatário é a pendência P-Q6 da Célula.
   const temAlertaSemDono = alertas.some((a) => !a.dono_configurado)
-  const destinatarios = alertas.find((a) => a.dono_configurado)?.destinatarios || []
+  const destinatarios = (alertas.find((a) => a.dono_configurado)?.destinatarios || [])
+    .map(normalizarDestinatario)
+    .filter(Boolean)
 
   const handleMarcarCiente = async (alertaId) => {
     setMarkingId(alertaId)
@@ -85,152 +108,138 @@ export function AlertaVinculoCard({
   }
 
   return (
-    <Card padding="none" className="gap-0 border-warning-border overflow-hidden mb-6">
-      {/* Cabeçalho do Card */}
-      <div className="px-6 py-4 bg-warning-subtle border-b border-warning-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-warning-subtle text-warning-text rounded-md">
-            <ShieldAlert className="w-5 h-5 text-warning-text" />
+    <Card padding="none" className={`gap-0 overflow-hidden ${abertos > 0 ? 'border-l-4 border-l-warning' : ''}`}>
+      {/* Cabeçalho — mesmo padrão dos demais cards da aba (ex.: Revisões de exportação) */}
+      <div className="px-6 py-4 bg-muted border-b border-border flex items-center gap-2.5">
+        <div className="p-2 bg-warning-subtle text-warning-text rounded-md">
+          <ShieldAlert className="w-5 h-5" />
+        </div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground">
+              Vínculo societário no exterior
+            </h3>
+            {abertos > 0 ? (
+              <Badge variant="warning">{abertos} aguardando ciência</Badge>
+            ) : (
+              <Badge variant="success">Todos cientes</Badge>
+            )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-warning-text">
-                Alertas de Vínculo Societário (vincPrest 1–5)
-              </h3>
-              <Badge variant="warning">
-                {alertas.length} {alertas.length === 1 ? 'ocorrência' : 'ocorrências'}
-              </Badge>
-            </div>
-            <p className="text-xs text-warning-text mt-0.5">
-              Identificação de prestação entre partes vinculadas no exterior (preço de transferência e desoneração condicionada)
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Prestações a partes vinculadas (vincPrest 1–5): afetam preço de transferência e a desoneração da exportação
+          </p>
         </div>
       </div>
 
-      {/* Selo "sem dono": nenhum destinatário vivo para EXPORTACAO_VINCULO_SOCIETARIO.
-          Na v1 o alerta é só tela + métrica (dono:sem_dono); não há canal de saída. */}
+      {/* Quem é avisado. Na v1 o alerta é só tela + métrica (dono:sem_dono) quando
+          não há destinatário vivo para EXPORTACAO_VINCULO_SOCIETARIO. */}
       {temAlertaSemDono ? (
-        <div className="mx-6 mt-4 p-3.5 bg-destructive-subtle border border-destructive-border rounded-md flex items-start gap-2.5 text-xs text-destructive-text">
-          <AlertTriangle className="w-4 h-4 text-destructive-text shrink-0 mt-0.5" />
+        <div className="mx-6 mt-4 p-3 bg-destructive-subtle border border-destructive-border rounded-md flex items-start gap-2.5 text-xs text-destructive-text">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
           <div>
-            <Badge variant="destructive" className="mr-1.5">
-              sem dono (Q6 pendente)
-            </Badge>
-            Nenhum destinatário configurado para alertas de vínculo societário. O alerta fica visível aqui
-            e é contado na métrica como <code className="font-mono">dono:sem_dono</code> até a Célula
-            indicar o responsável (pendência Q6).
+            <p className="font-semibold">Ninguém está recebendo este alerta</p>
+            <p className="mt-0.5">
+              Falta indicar o responsável na Célula (pendência Q6). Até lá o alerta aparece só aqui e conta na métrica{' '}
+              <code className="font-mono">dono:sem_dono</code>.
+            </p>
           </div>
         </div>
-      ) : (
-        <div className="mx-6 mt-4 p-3 bg-muted border border-border rounded-md text-xs text-foreground flex items-start gap-2">
-          <Users className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-          <div>
-            <strong className="font-semibold">Quem deveria receber:</strong>{' '}
-            {destinatarios.map((d) => `${d.destino} (${d.canal})`).join(', ')}
-          </div>
+      ) : destinatarios.length > 0 && (
+        <div className="px-6 pt-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground font-medium">Notificados:</span>
+          {destinatarios.map((d) => (
+            <span
+              key={`${d.canal}-${d.destino}`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-foreground"
+              title="E-mail"
+            >
+              <Mail className="w-3 h-3 text-muted-foreground" />
+              {d.destino}
+            </span>
+          ))}
         </div>
       )}
 
       {errorMsg && (
-        <div className="mx-6 mt-3 p-3 bg-destructive-subtle border border-destructive-border text-destructive-text rounded-md text-xs">
+        <div role="alert" className="mx-6 mt-3 p-3 bg-destructive-subtle border border-destructive-border text-destructive-text rounded-md text-xs">
           {errorMsg}
         </div>
       )}
 
-      {/* Tabela de Alertas */}
+      {/* Ocorrências por competência */}
       <div className="p-6">
-        <div className="overflow-x-auto border border-border rounded-md">
+        <div className="border border-border rounded-md overflow-hidden">
           <Table className="text-left text-xs bg-card">
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead scope="col" className="px-4 py-3 h-auto font-semibold uppercase tracking-wider text-muted-foreground">Competência</TableHead>
-                <TableHead scope="col" className="px-4 py-3 h-auto font-semibold uppercase tracking-wider text-muted-foreground">Vínculo(s) Detectado(s)</TableHead>
-                <TableHead scope="col" className="px-3 py-3 h-auto text-center font-semibold uppercase tracking-wider text-muted-foreground">Qtd. Notas</TableHead>
-                <TableHead scope="col" className="px-4 py-3 h-auto font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
-                <TableHead scope="col" className="px-4 py-3 h-auto font-semibold uppercase tracking-wider text-muted-foreground">Ciência / Responsável</TableHead>
-                <TableHead scope="col" className="px-4 py-3 h-auto text-right font-semibold uppercase tracking-wider text-muted-foreground">Ação</TableHead>
+                <TableHead scope="col" className={TH}>Competência</TableHead>
+                <TableHead scope="col" className={TH}>Vínculo detectado</TableHead>
+                <TableHead scope="col" className={`${TH} text-right`}>Notas</TableHead>
+                <TableHead scope="col" className={TH}>Situação</TableHead>
+                <TableHead scope="col" className={`${TH} text-right`}>
+                  <span className="sr-only">Ação</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alertas.map((alerta) => {
+              {ordenados.map((alerta) => {
                 const isAberto = alerta.status === 'ABERTO'
                 const isMarking = markingId === alerta.id
 
                 return (
-                  <TableRow key={alerta.id} className="hover:bg-warning-subtle transition-colors">
+                  <TableRow key={alerta.id} className="align-top">
                     <TableCell className="px-4 py-3 whitespace-nowrap font-medium text-foreground">
                       {formatCompetenciaDisplay(alerta.competencia)}
                     </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {alerta.valores_vinc_prest && alerta.valores_vinc_prest.length > 0 ? (
-                          alerta.valores_vinc_prest.map((v) => (
-                            <Badge key={v} variant="warning">
+                    <TableCell className="px-4 py-3 whitespace-normal">
+                      {alerta.valores_vinc_prest && alerta.valores_vinc_prest.length > 0 ? (
+                        <ul className="space-y-1">
+                          {alerta.valores_vinc_prest.map((v) => (
+                            <li key={v} className="flex items-center gap-2 text-foreground">
+                              <span className="inline-flex items-center justify-center size-5 rounded bg-muted font-mono text-[11px] font-semibold text-muted-foreground">
+                                {v}
+                              </span>
                               {VINC_PREST_MAP[v] || `Código ${v}`}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-muted-foreground italic">Não especificado</span>
-                        )}
-                      </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-muted-foreground italic">Não especificado</span>
+                      )}
                     </TableCell>
-                    <TableCell className="px-3 py-3 whitespace-nowrap text-center font-semibold text-foreground">
+                    <TableCell className="px-4 py-3 whitespace-nowrap text-right font-semibold tabular-nums text-foreground">
                       {alerta.qtd_notas}
                     </TableCell>
                     <TableCell className="px-4 py-3 whitespace-nowrap">
                       {isAberto ? (
                         <Badge variant="warning">
-                          <Clock className="w-3 h-3" />
-                          Aberto
+                          <Clock className="w-3 h-3" /> Aguardando ciência
                         </Badge>
                       ) : (
-                        <Badge variant="success">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Ciente
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                      {alerta.ciente_por ? (
-                        <div>
-                          <div className="flex items-center gap-1 font-medium text-foreground">
-                            <UserCheck className="w-3.5 h-3.5 text-success-text" />
-                            <span>{alerta.ciente_por}</span>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {formatDate(alerta.ciente_em)}
+                        <div className="space-y-0.5">
+                          <Badge variant="success">
+                            <CheckCircle2 className="w-3 h-3" /> Ciente
+                          </Badge>
+                          <div className="text-[11px] text-muted-foreground">
+                            {alerta.ciente_por || '—'} · {formatDate(alerta.ciente_em)}
                           </div>
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground italic">Aguardando confirmação</span>
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3 whitespace-nowrap text-right">
-                      {isAberto ? (
+                      {isAberto && (
                         <Button
                           type="button"
-                          variant="warning"
+                          variant="outline"
                           size="sm"
                           onClick={() => handleMarcarCiente(alerta.id)}
                           disabled={isMarking || loading}
                         >
-                          {isMarking ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>Gravando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Marcar ciente</span>
-                            </>
-                          )}
+                          {isMarking
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {isMarking ? 'Gravando...' : 'Marcar ciente'}
                         </Button>
-                      ) : (
-                        <span className="text-xs text-success-text font-medium flex items-center justify-end gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Concluído
-                        </span>
                       )}
                     </TableCell>
                   </TableRow>

@@ -1,9 +1,16 @@
 import React, { useState } from 'react'
-import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, X, XCircle } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import {
   Button,
-  IconButton,
-  Card,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  RadioGroup,
+  RadioGroupItem,
+  Label,
   Checkbox,
   Input,
   Textarea,
@@ -85,18 +92,18 @@ export function DecisaoRevisaoModal({ revisao, empresaNome, onDecidir, onClose }
   const input = 'w-full h-auto px-2.5 py-1 text-xs md:text-xs'
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <Card padding="none" className="gap-0 shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-info-subtle">
-          <h3 className="text-sm font-semibold text-info-text">
+    <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose(null) }}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="text-left">
+          <DialogTitle className="text-sm">
             Decisão de revisão — nota #{revisao.invoice_id}
-          </h3>
-          <IconButton type="button" aria-label="Fechar" variant="ghost" size="sm" onClick={() => onClose(null)} className="text-info-text hover:text-info-text">
-            <X className="w-4 h-4" />
-          </IconButton>
-        </div>
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Escolha o desfecho da revisão e registre a justificativa.
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div className="bg-muted p-3 rounded border border-border space-y-1 text-foreground">
             {empresaNome && <div><strong>Empresa:</strong> {empresaNome}</div>}
             <div><strong>Competência:</strong> {formatCompetencia(revisao.competencia)} · <strong>Gatilho:</strong> {GATILHO_REVISAO[revisao.gatilho] || revisao.gatilho}</div>
@@ -110,25 +117,26 @@ export function DecisaoRevisaoModal({ revisao, empresaNome, onDecidir, onClose }
           </div>
 
           <div>
-            <label className="block font-semibold text-foreground mb-2">Desfecho *</label>
-            <div className="grid grid-cols-2 gap-3">
+            <Label className="block text-xs font-semibold text-foreground mb-2">Desfecho *</Label>
+            <RadioGroup value={escolha} onValueChange={setEscolha} className="grid grid-cols-2 gap-3">
               {[
                 ['EXPORTACAO', 'Exportação', 'ISS, PIS e Cofins desonerados', CheckCircle2, 'border-success-border bg-success-subtle ring-2 ring-success-border', 'text-success-text'],
                 ['INTERNO', 'Mercado interno', 'Tributação normal no Simples', XCircle, 'border-destructive-border bg-destructive-subtle ring-2 ring-destructive-border', 'text-destructive-text'],
               ].map(([valor, titulo, sub, Icone, ativo, corIcone]) => (
-                <label
+                <Label
                   key={valor}
-                  className={`border rounded-lg p-3 cursor-pointer flex flex-col items-center text-center transition-all ${
+                  htmlFor={`escolha-${valor}`}
+                  className={`border rounded-lg p-3 cursor-pointer flex flex-col items-center text-center gap-0 font-normal transition-all ${
                     escolha === valor ? ativo : 'border-border hover:bg-muted text-foreground'
                   }`}
                 >
-                  <input type="radio" name="escolha" value={valor} checked={escolha === valor} onChange={() => setEscolha(valor)} className="sr-only" />
+                  <RadioGroupItem id={`escolha-${valor}`} value={valor} className="sr-only" />
                   <Icone className={`w-5 h-5 mb-1 ${corIcone}`} />
-                  <span className="font-semibold">{titulo}</span>
+                  <span className="text-xs font-semibold">{titulo}</span>
                   <span className="text-[10px] text-muted-foreground mt-0.5">{sub}</span>
-                </label>
+                </Label>
               ))}
-            </div>
+            </RadioGroup>
           </div>
 
           {tardia && (
@@ -218,18 +226,18 @@ export function DecisaoRevisaoModal({ revisao, empresaNome, onDecidir, onClose }
             </div>
           )}
 
-          <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => onClose(null)}>
+          <DialogFooter className="pt-3 border-t border-border">
+            <Button type="button" variant="outline" size="sm" onClick={() => onClose(null)} disabled={submitting}>
               Cancelar
             </Button>
             <Button type="submit" variant="info" size="sm" disabled={submitting}>
               {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>Salvar decisão</span>
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

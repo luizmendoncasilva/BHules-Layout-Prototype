@@ -1,24 +1,52 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Bell, AlertTriangle, XCircle, DollarSign, ShieldAlert, RefreshCw, Clock } from 'lucide-react'
-import { Button, LoadingButton, Spinner } from '@bhubai/bhub-design-system'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Bell, RefreshCw, ArrowRight, ExternalLink, Mail } from 'lucide-react'
+import { Badge, Button, LoadingButton, Spinner } from '@bhubai/bhub-design-system'
 import { api } from '../../api/client'
-
-const TYPE_CONFIG = {
-  DIVERGENCIA_CRITICA: { icon: XCircle, color: 'text-destructive-text', bg: 'bg-destructive-subtle border-destructive-border', label: 'Divergencia Critica' },
-  CONFIANCA_BAIXA: { icon: AlertTriangle, color: 'text-warning-text', bg: 'bg-warning-subtle border-warning-border', label: 'Confianca Baixa' },
-  VALIDACAO_BLOQUEANTE: { icon: ShieldAlert, color: 'text-destructive-text', bg: 'bg-destructive-subtle border-destructive-border', label: 'Validacao Bloqueante' },
-  IMPACTO_FINANCEIRO_ALTO: { icon: DollarSign, color: 'text-info-text', bg: 'bg-info-subtle border-info-border', label: 'Impacto Financeiro' },
-}
+import {
+  TYPE_CONFIG, configDoAlerta, tempoRelativo, dataHoraCompleta, agruparPorPeriodo,
+} from './alertConfig'
 
 const PAGE_SIZE = 50
 
-export default function AlertsPanel() {
+function DetalheDoAlerta({ alert }) {
+  const d = alert.details
+  if (alert.type === 'DIVERGENCIA_CRITICA' && Array.isArray(d)) {
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {d.map((x, i) => (
+          <span key={i} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 text-xs">
+            <span className="text-muted-foreground">{x.campo}</span>
+            <span className="font-mono text-destructive-text line-through decoration-destructive-text/40">{x.emitente}</span>
+            <ArrowRight className="w-3 h-3 text-muted-foreground" />
+            <span className="font-mono font-semibold text-foreground">{x.sugerido}</span>
+          </span>
+        ))}
+      </div>
+    )
+  }
+  if (Array.isArray(d)) {
+    return (
+      <ul className="mt-1.5 space-y-1 text-sm text-foreground">
+        {d.map((x, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="mt-2 size-1 rounded-full bg-muted-foreground shrink-0" />
+            {x}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  return d ? <p className="mt-1 text-sm text-foreground">{d}</p> : null
+}
+
+export default function AlertsPanel({ onOpenInvoice }) {
   const [alerts, setAlerts] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
   const [limit, setLimit] = useState(PAGE_SIZE)
+  const [filtro, setFiltro] = useState('TODOS')
 
   const load = useCallback(async (currentLimit, { silent } = {}) => {
     if (silent) setLoadingMore(true)
@@ -52,152 +80,149 @@ export default function AlertsPanel() {
     load(PAGE_SIZE)
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center text-muted-foreground">
-        <Spinner size="lg" className="mr-2" />
-        Carregando alertas...
-      </div>
-    )
-  }
+  // Filtros = tipos com contagem, do mais grave para o menos grave.
+  const tipos = useMemo(() => Object.entries(stats?.by_type || {})
+    .sort(([a], [b]) => configDoAlerta(a).order - configDoAlerta(b).order), [stats])
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-destructive-subtle border border-destructive-border rounded-lg p-4 text-destructive-text text-sm">
-          Erro ao carregar alertas: {error}
-        </div>
-      </div>
-    )
-  }
+  const visiveis = filtro === 'TODOS' ? alerts : alerts.filter((a) => a.type === filtro)
+  const grupos = agruparPorPeriodo(visiveis)
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-border bg-muted flex items-center justify-between -mx-6 -mt-6 mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Alertas</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {stats ? `${stats.total} alertas no total` : 'Carregando...'}
-          </p>
+    <div className="flex flex-col min-h-0 max-h-[85vh]">
+      {/* Cabeçalho fixo — pr-12 deixa espaço para o X do Dialog */}
+      <div className="px-6 pt-5 pb-4 pr-12 border-b border-border space-y-4 shrink-0">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Alertas do motor</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {stats ? `${stats.total} ${stats.total === 1 ? 'alerta' : 'alertas'} nas notas processadas` : 'Carregando...'}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-        >
-          <RefreshCw className="w-4 h-4" />
-          Atualizar
-        </Button>
+
+        {tipos.length > 0 && (
+          <div role="tablist" aria-label="Filtrar por tipo" className="flex flex-wrap gap-2">
+            {[['TODOS', stats.total], ...tipos].map(([type, n]) => {
+              const ativo = filtro === type
+              const cfg = type === 'TODOS' ? null : configDoAlerta(type)
+              const Icon = cfg?.icon
+              return (
+                <button
+                  key={type}
+                  role="tab"
+                  aria-selected={ativo}
+                  onClick={() => setFiltro(type)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    ativo
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border bg-card text-foreground hover:bg-muted'
+                  }`}
+                >
+                  {Icon && <Icon className={`w-3.5 h-3.5 ${ativo ? '' : cfg.text}`} />}
+                  {cfg ? cfg.label : 'Todos'}
+                  <span className={`tabular-nums ${ativo ? 'opacity-80' : 'text-muted-foreground'}`}>{n}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Stats cards */}
-      {stats && stats.by_type && Object.keys(stats.by_type).length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {Object.entries(stats.by_type).map(([type, count]) => {
-            const cfg = TYPE_CONFIG[type] || { icon: Bell, color: 'text-muted-foreground', bg: 'bg-muted border-border', label: type }
-            const Icon = cfg.icon
-            return (
-              <div key={type} className={`${cfg.bg} rounded-lg p-3 border`}>
-                <div className="flex items-center gap-2">
-                  <Icon className={`w-4 h-4 ${cfg.color}`} />
-                  <span className="text-xs text-muted-foreground">{cfg.label}</span>
-                </div>
-                <p className={`text-2xl font-semibold mt-1 ${cfg.color}`}>{count}</p>
+      {/* Lista rolável */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {loading ? (
+          <div className="py-12 flex items-center justify-center text-muted-foreground text-sm">
+            <Spinner size="lg" className="mr-2" />
+            Carregando alertas...
+          </div>
+        ) : error ? (
+          <div role="alert" className="bg-destructive-subtle border border-destructive-border rounded-lg p-4 text-destructive-text text-sm flex items-center justify-between gap-3">
+            <span>Não foi possível carregar os alertas: {error}</span>
+            <Button variant="outline" size="sm" onClick={handleRefresh}>Tentar de novo</Button>
+          </div>
+        ) : grupos.length === 0 ? (
+          <div className="text-center py-12">
+            <Bell className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
+            <p className="text-sm font-medium text-foreground">Nenhum alerta {filtro === 'TODOS' ? 'recente' : 'deste tipo'}</p>
+            <p className="text-xs text-muted-foreground mt-1">Os alertas aparecem quando a escrituração encontra divergências críticas.</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {grupos.map((g) => (
+              <section key={g.id}>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{g.label}</h3>
+                <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+                  {g.itens.map((alert, idx) => {
+                    const cfg = configDoAlerta(alert.type)
+                    const Icon = cfg.icon
+                    return (
+                      <li key={`${alert.invoice_id}-${alert.timestamp}-${idx}`} className="group flex gap-3 p-4 hover:bg-muted/50 transition-colors">
+                        <div className={`size-8 rounded-md flex items-center justify-center shrink-0 ${cfg.chip}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                            <p className="text-sm">
+                              <span className={`font-semibold ${cfg.text}`}>{cfg.label}</span>
+                              <span className="text-muted-foreground"> · NF {alert.num_doc || `#${alert.invoice_id}`}</span>
+                            </p>
+                            <time
+                              dateTime={alert.timestamp}
+                              title={dataHoraCompleta(alert.timestamp)}
+                              className="text-xs text-muted-foreground whitespace-nowrap"
+                            >
+                              {tempoRelativo(alert.timestamp)}
+                            </time>
+                          </div>
+                          {alert.company && <p className="text-xs text-muted-foreground truncate">{alert.company}</p>}
+
+                          <DetalheDoAlerta alert={alert} />
+
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                            {alert.item_desc ? (
+                              <Badge variant="outline" className="max-w-full truncate font-normal">Item: {alert.item_desc}</Badge>
+                            ) : <span />}
+                            {onOpenInvoice && (
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                className="text-primary"
+                                onClick={() => onOpenInvoice(alert.invoice_id)}
+                              >
+                                Abrir nota <ExternalLink className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            ))}
+
+            {alerts.length >= limit && (
+              <div className="flex justify-center">
+                <LoadingButton variant="secondary" onClick={handleLoadMore} loading={loadingMore}>
+                  Carregar mais
+                </LoadingButton>
               </div>
-            )
-          })}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
 
-      {/* Alert list */}
-      {alerts.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Bell className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p>Nenhum alerta recente</p>
-          <p className="text-sm mt-1">Alertas aparecem apos a escrituracao detectar divergencias criticas</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {alerts.map((alert, idx) => {
-            const cfg = TYPE_CONFIG[alert.type] || { icon: Bell, color: 'text-muted-foreground', bg: 'bg-muted border-border', label: alert.type }
-            const Icon = cfg.icon
-            return (
-              <div key={idx} className={`${cfg.bg} border rounded-lg p-4`}>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <Icon className={`w-5 h-5 mt-0.5 ${cfg.color}`} />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-medium text-sm ${cfg.color}`}>{cfg.label}</span>
-                        <span className="text-xs text-muted-foreground">NF #{alert.invoice_id}</span>
-                        {alert.company && (
-                          <span className="text-xs text-muted-foreground">- {alert.company}</span>
-                        )}
-                      </div>
-                      {/* Details */}
-                      {alert.type === 'DIVERGENCIA_CRITICA' && alert.details && (
-                        <ul className="mt-1 text-xs text-muted-foreground space-y-0.5">
-                          {alert.details.map((d, i) => (
-                            <li key={i}>
-                              <span className="font-medium">{d.campo}:</span>{' '}
-                              {d.emitente} → {d.sugerido}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {alert.type === 'CONFIANCA_BAIXA' && (
-                        <p className="mt-1 text-xs text-muted-foreground">{alert.details}</p>
-                      )}
-                      {alert.type === 'IMPACTO_FINANCEIRO_ALTO' && (
-                        <p className="mt-1 text-xs text-muted-foreground">{alert.details}</p>
-                      )}
-                      {alert.type === 'VALIDACAO_BLOQUEANTE' && Array.isArray(alert.details) && (
-                        <ul className="mt-1 text-xs text-muted-foreground space-y-0.5">
-                          {alert.details.map((d, i) => <li key={i}>{d}</li>)}
-                        </ul>
-                      )}
-                      {alert.item_desc && (
-                        <p className="mt-1 text-xs text-muted-foreground truncate max-w-md">
-                          Item: {alert.item_desc}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {alert.timestamp && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
-                      <Clock className="w-3 h-3" />
-                      {new Date(alert.timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Load more */}
-      {alerts.length > 0 && alerts.length >= limit && (
-        <div className="flex justify-center">
-          <LoadingButton
-            variant="secondary"
-            onClick={handleLoadMore}
-            loading={loadingMore}
-          >
-            Carregar mais
-          </LoadingButton>
-        </div>
-      )}
-
-      {/* Slack/Email config hint */}
-      <div className="bg-muted border border-border rounded-lg p-4 text-sm text-muted-foreground">
-        <p className="font-medium mb-1">Configurar notificacoes externas:</p>
-        <ul className="text-xs space-y-1 ml-4 list-disc">
-          <li><code>ALERT_SLACK_WEBHOOK_URL</code> — Webhook do Slack para alertas em tempo real</li>
-          <li><code>ALERT_EMAIL_TO</code> — Email para receber alertas criticos</li>
-        </ul>
+      {/* Rodapé: para onde os alertas também vão */}
+      <div className="px-6 py-3 border-t border-border bg-muted text-xs text-muted-foreground flex items-center gap-2 shrink-0">
+        <Mail className="w-3.5 h-3.5 shrink-0" />
+        <span>Alertas críticos também são enviados por e-mail para a Célula Fiscal.</span>
       </div>
     </div>
   )
 }
+
+export { TYPE_CONFIG }

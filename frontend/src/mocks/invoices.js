@@ -1,4 +1,5 @@
 import { mockRoute, paginate, paramsOf } from './registry'
+import { difalPendenteDaNota } from './difal'
 import { MOCK_COMPANIES } from './companies'
 import { addAuditEvent, EXTRA_AUDIT_EVENTS } from './audit'
 
@@ -303,6 +304,11 @@ export function getInvoiceById(id) {
   return INVOICES.find((inv) => inv.id === Number(id)) || INVOICES[0]
 }
 
+// O selo depende dos ajustes feitos na aba DIFAL, então é lido na hora.
+function comDifal(inv) {
+  return { ...inv, difal_pendente: difalPendenteDaNota(inv) }
+}
+
 function filterInvoices(list, params) {
   let out = list
   const companyIds = params.get('company_ids')
@@ -341,6 +347,9 @@ function filterInvoices(list, params) {
   if (indOper) out = out.filter((inv) => inv.ind_oper === indOper)
   // Regime federal do NOSSO cliente — vem de MOCK_COMPANIES (empresa dona da
   // nota via company_id), não de um campo na própria invoice.
+  // FIS-1222: 'sim' = nota com DIFAL do Simples aguardando o analista.
+  const difalPendente = params.get('difal_pendente')
+  if (difalPendente) out = out.filter((inv) => difalPendenteDaNota(inv) === (difalPendente === 'sim'))
   const regimeTributario = params.get('regime_tributario')
   if (regimeTributario) {
     out = out.filter((inv) => {
@@ -356,7 +365,8 @@ mockRoute('/invoices', 'GET', (path) => {
   const page = params.get('page') || 1
   const pageSize = params.get('page_size') || 50
   const filtered = filterInvoices(INVOICES, params)
-  return paginate(filtered, page, pageSize)
+  const pagina = paginate(filtered, page, pageSize)
+  return { ...pagina, items: pagina.items.map(comDifal) }
 })
 
 mockRoute('/invoices/problem-types', 'GET', () => PROBLEM_TYPES)
@@ -371,9 +381,23 @@ mockRoute('/invoices/status-counts', 'GET', (path) => {
   return counts
 })
 
-mockRoute(/^\/invoices\/(\d+)$/, 'GET', (_path, match) => getInvoiceById(match[1]))
+mockRoute(/^\/invoices\/(\d+)$/, 'GET', (_path, match) => comDifal(getInvoiceById(match[1])))
 
 mockRoute(/^\/invoices\/(\d+)\/items$/, 'GET', (_path, match) => getInvoiceItemsById(match[1]))
+
+// "Ver XML original" (DetailView): o backend devolve uma URL presigned; no
+// protótipo geramos um XML mínimo em memória (blob:) para a aba abrir algo.
+mockRoute(/^\/invoices\/(\d+)\/documento-original$/, 'GET', (_path, match) => {
+  const inv = getInvoiceById(match[1]) || {}
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!-- Protótipo BHules: XML fictício -->\n<nfeProc><NFe><infNFe Id="NFe${inv.chave_nfe || ''}"><ide><nNF>${inv.num_doc || match[1]}</nNF></ide><emit><CNPJ>${(inv.emit_cnpj || '').replace(/\D/g, '')}</CNPJ><xNome>${inv.emit_razao_social || ''}</xNome></emit><total><ICMSTot><vNF>${inv.vl_doc ?? ''}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>\n`
+  const url = typeof URL !== 'undefined' && URL.createObjectURL
+    ? URL.createObjectURL(new Blob([xml], { type: 'text/xml' }))
+    : 'about:blank'
+  return { url, expires_in: 3600, content_type: 'application/xml', source: 'MOCK' }
+})
+
+// Feedback genérico (FeedbackButtons / useFeedback).
+mockRoute('/feedback', 'POST', () => ({ ok: true }))
 
 mockRoute(/^\/invoices\/(\d+)\/audit-events$/, 'GET', (_path, match) => {
   const invoiceId = Number(match[1])
@@ -406,21 +430,40 @@ mockRoute(/^\/invoices\/(\d+)\/audit-events$/, 'GET', (_path, match) => {
 })
 
 mockRoute(/^\/invoices\/(\d+)\/status-reasons$/, 'GET', (_path, match) => {
+  // Mesmo contrato do backend: status_analise + summary + reasons[] (severity,
+  // rule_code, description, current_value/expected_value...).
   const inv = getInvoiceById(match[1])
-  if (inv.status_analise === 'CONFORME') return { motivos: [] }
-  const pool = [
-    { campo: 'cfop', descricao: 'CFOP do item diverge do CFOP esperado para a operação de entrada', valor_esperado: '1102', valor_encontrado: '5102' },
-    { campo: 'cst_icms', descricao: 'CST ICMS informado não é compatível com o regime tributário do destinatário', valor_esperado: '00', valor_encontrado: '90' },
-    { campo: 'ncm', descricao: 'NCM ausente ou inválido no item da nota', valor_esperado: '8 dígitos', valor_encontrado: '-' },
-    { campo: 'valor_icms', descricao: 'Valor de ICMS destacado diverge do calculado pelo motor', valor_esperado: 'R$ 245,80', valor_encontrado: 'R$ 198,40' },
-    { campo: 'finalidade', descricao: 'Finalidade do item não identificada automaticamente', valor_esperado: 'REVENDA', valor_encontrado: '-' },
-  ]
-  const n = inv.status_analise === 'BLOQUEADO' ? 4 + (inv.id % 2) : 3 + (inv.id % 2)
-  const motivos = []
-  for (let i = 0; i < Math.min(n, pool.length); i++) {
-    motivos.push({ ...pool[i], severidade: inv.status_analise === 'BLOQUEADO' ? 'CRITICO' : (i === 0 ? 'ALERTA' : 'INFORMATIVO') })
+  const items = getInvoiceItemsById(inv.id)
+  if (inv.status_analise === 'CONFORME') {
+    return {
+      status_analise: 'CONFORME',
+      summary: 'Nota conforme: CFOP, CST e alíquotas batem com o esperado pelo motor para a operação de entrada.',
+      reasons: [],
+    }
   }
-  return { motivos }
+  const bloqueada = inv.status_analise === 'BLOQUEADO'
+  const pool = [
+    { rule_code: 'RN-CFOP-01', field_name: 'cfop', description: 'CFOP do item diverge do CFOP esperado para a operação de entrada', expected_value: '1102', current_value: '5102', legislation_ref: 'Ajuste SINIEF s/n, Anexo II (CFOP)' },
+    { rule_code: 'RN-CST-03', field_name: 'cst_icms', description: 'CST ICMS informado não é compatível com o regime tributário do destinatário', expected_value: '00', current_value: '90' },
+    { rule_code: 'RN-NCM-07', field_name: 'ncm', description: 'NCM ausente ou inválido no item da nota', expected_value: '8 dígitos', current_value: '-' },
+    { rule_code: 'RN-ICMS-11', field_name: 'vl_icms', description: 'Valor de ICMS destacado diverge do calculado pelo motor', expected_value: 'R$ 245,80', current_value: 'R$ 198,40', impact_value: 47.4 },
+    { rule_code: 'RN-FIN-02', field_name: 'finalidade', description: 'Finalidade do item não identificada automaticamente', expected_value: 'REVENDA', current_value: '-' },
+  ]
+  const n = bloqueada ? 4 + (inv.id % 2) : 2 + (inv.id % 2)
+  const reasons = pool.slice(0, n).map((r, i) => ({
+    ...r,
+    severity: bloqueada ? (i < 2 ? 'CRITICO' : 'ALERTA') : (i === 0 ? 'ALERTA' : 'INFORMATIVO'),
+    num_item: items[i % Math.max(items.length, 1)]?.num_item ?? null,
+    item_descricao: items[i % Math.max(items.length, 1)]?.descr_compl ?? null,
+  }))
+  const criticos = reasons.filter((r) => r.severity === 'CRITICO').length
+  return {
+    status_analise: inv.status_analise,
+    summary: bloqueada
+      ? `Nota bloqueada: ${criticos} divergência(s) crítica(s) impedem a escrituração automática.`
+      : `Nota requer revisão: ${reasons.length} ponto(s) a conferir antes de escriturar.`,
+    reasons,
+  }
 })
 
 mockRoute(/^\/invoices\/(\d+)\/feedback$/, 'GET', () => ({ vote: null, comment: null }))

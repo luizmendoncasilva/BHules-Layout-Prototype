@@ -7,6 +7,7 @@ import {
 import { api } from '../../api/client'
 import { useCompany } from '../../context/CompanyContext'
 import CompanySelector from '../shared/CompanySelector'
+import { useToast } from '../shared/Toast'
 import ValidacaoDifalModal, { fmtBRL } from './ValidacaoDifalModal'
 
 // Fila DIFAL-SN (RN-25, DV5-01, T9) — a Célula valida nota a nota os itens
@@ -43,6 +44,7 @@ const LOTE_BLOCO = 200
 const fmtPct = (v) => (v == null || v === '' ? '—' : `${Number(v).toLocaleString('pt-BR')}%`)
 
 export default function DifalSnFila() {
+  const toast = useToast()
   const { companyId, companyName } = useCompany()
 
   const [items, setItems] = useState([])
@@ -199,12 +201,12 @@ export default function DifalSnFila() {
       // botão aparece.
       const pendentes = todos.slice(0, LOTE_FILTRO_MAX)
       if (pendentes.length === 0) {
-        alert('Nenhum item pendente para os filtros aplicados.')
+        toast.info('Nenhum item pendente para os filtros aplicados.')
         return
       }
       abrirModal(pendentes)
     } catch (err) {
-      alert('Erro ao coletar a fila: ' + err.message)
+      toast.error('Erro ao coletar a fila', { description: err.message })
     } finally {
       setColetandoFiltro(false)
     }

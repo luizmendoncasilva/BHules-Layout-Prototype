@@ -150,7 +150,7 @@ function seedEmpresa(companyId) {
           ciente_por: null,
           ciente_em: null,
           dono_configurado: companyId !== 6,
-          destinatarios: companyId !== 6 ? ['celula-fiscal@bhub.ai', 'juliana.pereira@bhub.ai'] : [],
+          destinatarios: companyId !== 6 ? [{ destino: 'celula-fiscal@bhub.ai', canal: 'EMAIL' }, { destino: 'juliana.pereira@bhub.ai', canal: 'EMAIL' }] : [],
         },
         {
           id: base + 31,
@@ -162,7 +162,7 @@ function seedEmpresa(companyId) {
           ciente_por: 'ricardo.alves@bhub.ai',
           ciente_em: '2026-09-12T15:04:00Z',
           dono_configurado: companyId !== 6,
-          destinatarios: companyId !== 6 ? ['celula-fiscal@bhub.ai', 'juliana.pereira@bhub.ai'] : [],
+          destinatarios: companyId !== 6 ? [{ destino: 'celula-fiscal@bhub.ai', canal: 'EMAIL' }, { destino: 'juliana.pereira@bhub.ai', canal: 'EMAIL' }] : [],
         },
       ]
     : []

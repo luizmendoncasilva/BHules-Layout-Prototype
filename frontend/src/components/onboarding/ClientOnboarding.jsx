@@ -88,10 +88,14 @@ export default function ClientOnboarding() {
   const handleSyncCertificates = async () => {
     setSyncingCerts(true)
     try {
-      await api.syncCertificates()
+      const res = await api.syncCertificates()
+      toast.success('Certificados atualizados', {
+        description: res?.synced != null ? `${res.synced} empresa(s) sincronizada(s).` : undefined,
+      })
       loadCompanies()
     } catch (e) {
       console.error('Certificate sync error:', e)
+      toast.error('Erro ao atualizar certificados', { description: e.message })
     } finally {
       setSyncingCerts(false)
     }

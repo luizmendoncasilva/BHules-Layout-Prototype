@@ -152,7 +152,7 @@ export function TabelaCodigosServico({
   const anexoDerivado = getAnexoDerivado()
 
   return (
-    <Card padding="none" className="gap-0 mb-6 overflow-hidden">
+    <Card padding="none" className="gap-0 overflow-hidden">
       {/* Cabeçalho da Tabela */}
       <div className="px-6 py-4 border-b border-border bg-muted flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>

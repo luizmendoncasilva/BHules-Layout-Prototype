@@ -55,7 +55,7 @@ declare function SidebarMenuAction({ className, asChild, showOnHover, ...props }
     asChild?: boolean;
     showOnHover?: boolean;
 }): import("react/jsx-runtime").JSX.Element;
-declare function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"div">): import("react/jsx-runtime").JSX.Element;
+declare function SidebarMenuBadge({ className, children, ...props }: React.ComponentProps<"div">): import("react/jsx-runtime").JSX.Element;
 declare function SidebarMenuSkeleton({ className, showIcon, ...props }: React.ComponentProps<"div"> & {
     showIcon?: boolean;
 }): import("react/jsx-runtime").JSX.Element;

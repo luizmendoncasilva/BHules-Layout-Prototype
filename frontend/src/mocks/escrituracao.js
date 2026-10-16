@@ -91,7 +91,10 @@ function buildEscrituracaoResult(invoiceId) {
       ncm: it.ncm,
       valor_item: it.vl_item,
       finalidade: pick(['REVENDA', 'MATERIA_PRIMA', 'USO_CONSUMO']),
-      finalidade_fonte: pick(['SPED_HISTORICO', 'CADASTRO_PRODUTO', 'LLM']),
+      // 2º item de cada nota vem de precedente integrado: exibe o botão
+      // "Revogar precedente" da aba Escrituração (fiscal-adms) no protótipo.
+      // (pick() continua sendo chamado para não mudar a sequência do seed.)
+      finalidade_fonte: ((f) => (idx === 1 ? 'PRECEDENTE_INTEGRADO' : f))(pick(['SPED_HISTORICO', 'CADASTRO_PRODUTO', 'LLM'])),
       cfop_emitente: it.cfop_emitente,
       cfop_entrada: it.cfop_entrada,
       cst_icms_emitente: it.cst_icms,
@@ -164,6 +167,20 @@ mockRoute(/^\/escrituracao\/(\d+)\/confirmar-envio$/, 'POST', () => ({ ok: true 
 mockRoute(/^\/escrituracao\/(\d+)\/sped-export$/, 'GET', () => ({ ok: true, linhas: [] }))
 
 mockRoute('/escrituracao/feedback/batch', 'POST', () => ({ ok: true, total_processed: 1, total_errors: 0 }))
+
+// Export Excel assíncrono (ListView → ExportProgressModal). Sem estes mocks o
+// job_id vinha undefined e o modal ficava preso em "Gerando arquivo..." sem
+// botão de fechar. O 1º poll já devolve COMPLETED; download_url é um blob
+// (octet-stream, para o navegador baixar em vez de navegar).
+mockRoute('/escrituracao/export/xlsx/job', 'POST', () => ({ job_id: `mock-xlsx-${Date.now()}`, status: 'PENDING' }))
+
+mockRoute(/^\/escrituracao\/export\/xlsx\/job\/([^/]+)$/, 'GET', (_path, match) => {
+  const csv = 'nf;emitente;valor\n100022;Componentes Eletronicos Delta Ltda;38065,09\n'
+  const downloadUrl = typeof URL !== 'undefined' && URL.createObjectURL
+    ? URL.createObjectURL(new Blob([csv], { type: 'application/octet-stream' }))
+    : null
+  return { job_id: match[1], status: 'COMPLETED', total_count: 4, file_size_bytes: csv.length, download_url: downloadUrl }
+})
 
 mockRoute(/^\/validation\/reprocess\/(\d+)$/, 'POST', () => ({ ok: true, total_invoices: randInt(5, 40) }))
 

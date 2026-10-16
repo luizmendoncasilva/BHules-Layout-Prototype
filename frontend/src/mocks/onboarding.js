@@ -23,13 +23,42 @@ mockRoute('/onboarding/search', 'GET', (path) => {
   const limit = Number(params.get('limit')) || 20
   const filtered = q
     ? SEARCH_CANDIDATES.filter(
-        (c) => c.razao_social.toLowerCase().includes(q) || c.cnpj.replace(/\D/g, '').includes(q.replace(/\D/g, '')),
+        // Só compara CNPJ quando a busca tem dígitos ('' casaria com tudo).
+        (c) => c.razao_social.toLowerCase().includes(q)
+          || (/\d/.test(q) && c.cnpj.replace(/\D/g, '').includes(q.replace(/\D/g, ''))),
       )
     : SEARCH_CANDIDATES
-  return filtered.slice(0, limit)
+  // Formato lido por ClientOnboarding (data.results com guid/corporate_name/
+  // company_tax_type/status...). Antes vinha um array cru e a busca sempre
+  // mostrava "Nenhum resultado encontrado".
+  const TAX_TYPES = ['SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL']
+  const results = filtered.slice(0, limit).map((c, i) => ({
+    ...c,
+    guid: `cockpit-${c.cnpj.replace(/\D/g, '')}`,
+    corporate_name: c.razao_social,
+    company_tax_type: TAX_TYPES[i % TAX_TYPES.length],
+    status: c.situacao,
+    state_registration: `${100 + i}.${200 + i}.${300 + i}.${400 + i}`,
+    city: null,
+    city_ibge_code: null,
+  }))
+  return { results, total: results.length }
 })
 
-mockRoute('/onboarding/enable', 'POST', () => ({ ok: true, company_id: 99 }))
+// Formato lido por ClientOnboarding.handleEnable (status/message/company_id/
+// regime_tributario/uf) — sem `message` o toast de sucesso saía vazio.
+mockRoute('/onboarding/enable', 'POST', (_path, _m, rawBody) => {
+  let body = {}
+  try { body = JSON.parse(rawBody || '{}') } catch { /* corpo inválido */ }
+  return {
+    ok: true,
+    status: 'created',
+    message: `Empresa ${body.corporate_name || ''} habilitada no motor de regras.`.replace('  ', ' '),
+    company_id: 99,
+    regime_tributario: body.company_tax_type || 'LUCRO_PRESUMIDO',
+    uf: body.uf || null,
+  }
+})
 
 // Formato real lido por src/components/onboarding/ClientOnboarding.jsx —
 // bem mais rico que um cadastro simples: uf/regime_tributario/

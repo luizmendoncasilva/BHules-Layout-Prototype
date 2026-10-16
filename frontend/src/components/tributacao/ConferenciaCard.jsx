@@ -29,6 +29,8 @@ export function ConferenciaCard({
   saving = false,
   competenciaLabel = '',
   disabledReason = null,
+  // Falha ao LER a conferência: o card mostra o erro, nunca "pendente" (FIS-1253, PR-E).
+  erroLeitura = null,
   onConcluir,
   onReabrir,
 }) {
@@ -74,6 +76,10 @@ export function ConferenciaCard({
             {loading ? (
               <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Consultando...
+              </p>
+            ) : erroLeitura ? (
+              <p role="alert" className="text-sm text-destructive-text mt-1">
+                Não foi possível consultar a conferência: {erroLeitura}
               </p>
             ) : concluida ? (
               <>

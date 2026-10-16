@@ -107,8 +107,20 @@ function SeverityGroup({ severity, reasons, defaultOpen = true }) {
   )
 }
 
-export default function StatusReasons({ data }) {
-  if (!data) return null
+// Selo de DIFAL pendente (FIS-1222): a nota tem item de DIFAL do Simples
+// aguardando o analista na aba DIFAL.
+function DifalPendenteAviso() {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-xs text-warning-text">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span><strong className="font-semibold">DIFAL pendente</strong> · há itens aguardando ajuste do analista na aba DIFAL.</span>
+    </div>
+  )
+}
+
+export default function StatusReasons({ data, difalPendente = false }) {
+  // O selo aparece mesmo sem motivos de status.
+  if (!data) return difalPendente ? <DifalPendenteAviso /> : null
 
   const { status_analise, summary, reasons, alertas_nota } = data
   const hasReasons = reasons && reasons.length > 0
@@ -139,6 +151,8 @@ export default function StatusReasons({ data }) {
       <h3 className="text-lg font-semibold leading-7 text-foreground">
         Motivo do status
       </h3>
+
+      {difalPendente && <DifalPendenteAviso />}
 
       {/* Summary box */}
       <div className={`rounded-lg border ${statusStyle.border} ${statusStyle.bg} p-4`}>

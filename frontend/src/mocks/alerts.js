@@ -13,47 +13,52 @@ const ALERT_COMPANY_NAMES = MOCK_COMPANIES.filter((c) => c.ativo).map((c) => c.r
 const TYPES = ['DIVERGENCIA_CRITICA', 'CONFIANCA_BAIXA', 'VALIDACAO_BLOQUEANTE', 'IMPACTO_FINANCEIRO_ALTO']
 
 const ITEM_DESCRIPTIONS = [
-  'Comercializacao de cosmeticos importados - linha facial',
-  'Revenda de bebidas alcoolicas - lote 2026',
-  'Fios sinteticos para tecelagem industrial',
-  'Chapas de aco carbono laminado a frio',
+  'Comercialização de cosméticos importados - linha facial',
+  'Revenda de bebidas alcoólicas - lote 2026',
+  'Fios sintéticos para tecelagem industrial',
+  'Chapas de aço carbono laminado a frio',
   'Medicamentos de tarja preta - controlados',
-  'Servicos de terraplanagem e fundacao',
-  'Frete rodoviario intermunicipal de carga',
-  'Licenca de software sob demanda',
+  'Serviços de terraplanagem e fundação',
+  'Frete rodoviário intermunicipal de carga',
+  'Licença de software sob demanda',
 ]
 
 function buildDetails(type, i) {
   if (type === 'DIVERGENCIA_CRITICA') {
     return [
       { campo: 'CST ICMS', emitente: '060', sugerido: '010' },
-      { campo: 'Aliquota ICMS', emitente: `${(12 + (i % 6))}%`, sugerido: `${(18 + (i % 4))}%` },
+      { campo: 'Alíquota ICMS', emitente: `${(12 + (i % 6))}%`, sugerido: `${(18 + (i % 4))}%` },
     ]
   }
   if (type === 'VALIDACAO_BLOQUEANTE') {
     return [
-      'CFOP incompativel com a natureza da operacao declarada',
-      'CNPJ do emitente inativo na Receita Federal no momento da emissao',
+      'CFOP incompatível com a natureza da operação declarada',
+      'CNPJ do emitente inativo na Receita Federal no momento da emissão',
     ]
   }
   if (type === 'CONFIANCA_BAIXA') {
-    return `Modelo de classificacao retornou confianca de ${(45 + (i % 15))}% para o CFOP sugerido — abaixo do limiar de escrituracao automatica (62%).`
+    return `O modelo de classificação retornou ${(45 + (i % 15))}% de confiança para o CFOP sugerido, abaixo do limiar de escrituração automática (62%).`
   }
   // IMPACTO_FINANCEIRO_ALTO
-  return `Divergencia estimada de R$ ${(2800 + i * 415.3).toFixed(2)} entre o ICMS destacado e o ICMS recalculado pelo motor.`
+  const valor = (2800 + i * 415.3).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  return `Diferença estimada de ${valor} entre o ICMS destacado e o ICMS recalculado pelo motor.`
 }
 
 const ALERTS = Array.from({ length: 15 }, (_, i) => {
   const type = TYPES[i % TYPES.length]
-  const day = 1 + (i % 27)
-  const month = 5 + (i % 3)
+  // Datas relativas a agora (de minutos a ~12 dias atrás), para o painel
+  // sempre ter alertas de hoje, ontem e da semana.
+  const horasAtras = [0.2, 1.5, 3, 7, 20, 26, 30, 49, 52, 75, 100, 130, 170, 230, 290][i]
+  // Notas que existem no fixture de invoices (ids 1–60), para "Abrir nota" funcionar.
+  const invoiceId = 1 + ((i * 7) % 60)
   return {
     type,
-    invoice_id: 20000 + i * 11,
+    invoice_id: invoiceId,
+    num_doc: String(100000 + invoiceId),
     company: ALERT_COMPANY_NAMES[i % ALERT_COMPANY_NAMES.length],
     details: buildDetails(type, i),
     item_desc: ITEM_DESCRIPTIONS[i % ITEM_DESCRIPTIONS.length],
-    timestamp: `2026-0${month}-${String(day).padStart(2, '0')}T${String(8 + (i % 12)).padStart(2, '0')}:${String(5 + i * 3).padStart(2, '0')}:00Z`,
+    timestamp: new Date(Date.now() - horasAtras * 3600_000).toISOString(),
   }
 }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
 

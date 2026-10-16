@@ -69,7 +69,10 @@ export default function CorrectionModal({ item, onClose, onSubmit, regimeTributa
     <Sheet open={!!item} onOpenChange={(open) => { if (!open && !submitting) onClose() }}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl p-0 gap-0 relative"
+        // Sem "relative": sobrescreveria o "fixed" do SheetContent e o painel
+        // cairia no fluxo da página (overlay escurece, conteúdo some). O overlay
+        // de loading (absolute) já usa o próprio Sheet (fixed) como referência.
+        className="w-full sm:max-w-xl p-0 gap-0"
         showCloseButton={!submitting}
         onPointerDownOutside={(e) => { if (submitting) e.preventDefault() }}
         onEscapeKeyDown={(e) => { if (submitting) e.preventDefault() }}

@@ -1,6 +1,6 @@
 // TAILWIND-SCAN-TEST bg-fuchsia-950 text-fuchsia-950
 import { useCallback, useEffect, useState } from 'react'
-import { Toaster } from '@bhubai/bhub-design-system'
+import { Toaster, SidebarProvider, SidebarInset } from '@bhubai/bhub-design-system'
 import { useAuth } from './auth/useAuth'
 import { useHasRole, useHasAnyRole, ROLE_FISCAL_ADM, ROLE_FISCAL_OPERATOR } from './auth/roles'
 import { CompanyProvider } from './context/CompanyContext'
@@ -54,7 +54,7 @@ export default function App() {
     list: 'materiais_recebidas_entradas',
     cte: 'cte_recebidos_entradas',
     nfc: 'nfc_emitidas',
-    integradas: 'nfse_saida',
+    integradas: 'int_servicos_prestados',
     crawler: 'NFE',
     sped: 'fiscal',
     bhubtax: 'dados',
@@ -156,15 +156,29 @@ export default function App() {
         ainda usam useToast() — ver pendência no relatório de conformidade. */}
     <Toaster />
     <CompanyProvider>
-      <div className="flex h-screen w-full bg-background font-sans text-foreground antialiased overflow-hidden">
+      {/* Casca do app no padrão do DS: SidebarProvider (estado colapsado,
+          atalho Ctrl/Cmd+B) + AppSidebar (variant inset) + SidebarInset.
+          Começa colapsada, como a sidebar anterior. */}
+      <SidebarProvider defaultOpen={false} className="font-sans text-foreground antialiased">
         {/* Left Sidebar */}
         <Sidebar currentView={currentView} subViews={subViews} onNavigate={handleNavigate} />
 
         {/* Main Content — ErrorBoundary: crash de um painel não pode derrubar
             o console. Vale também para os que seguem montados escondidos
             depois da 1ª visita (BHubTax, Integradas, NFS-e, Batch). */}
-        <div className="flex-1 flex flex-col min-w-0 h-full">
-          <AppHeader currentView={currentView} subViews={subViews} onNavigate={handleNavigate} previousView={previousView} selectedInvoice={selectedInvoice} />
+        <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:overflow-hidden">
+          <AppHeader
+            currentView={currentView}
+            subViews={subViews}
+            onNavigate={handleNavigate}
+            previousView={previousView}
+            selectedInvoice={selectedInvoice}
+            onOpenInvoice={(invoiceId) => {
+              setPreviousView(currentView === 'detail' ? previousView : currentView)
+              setSelectedInvoice({ id: invoiceId })
+              setCurrentView('detail')
+            }}
+          />
 
           <div className="flex-1 min-h-0 flex flex-col">
           <ErrorBoundary resetKey={currentView}>
@@ -272,8 +286,8 @@ export default function App() {
           )}
           </ErrorBoundary>
           </div>
-        </div>
-      </div>
+        </SidebarInset>
+      </SidebarProvider>
     </CompanyProvider>
     </ToastProvider>
   )

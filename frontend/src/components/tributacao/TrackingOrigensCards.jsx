@@ -206,7 +206,7 @@ export function TrackingOrigensCards({
 
   if (!trackingData && loading) {
     return (
-      <Card padding="none" className="p-5 gap-4 mb-6 animate-pulse">
+      <Card padding="none" className="p-5 gap-4 animate-pulse">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
           <div className="h-5 bg-border rounded w-64"></div>
           <div className="h-6 bg-border rounded-full w-36"></div>
@@ -244,7 +244,7 @@ export function TrackingOrigensCards({
   }
 
   return (
-    <Card padding="none" className="p-5 gap-4 mb-6">
+    <Card padding="none" className="p-5 gap-4">
       {/* Header da Seção de Tracking */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
         <div className="flex items-center gap-2">
