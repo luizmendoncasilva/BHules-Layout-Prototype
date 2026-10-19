@@ -113,7 +113,7 @@ function DisabledButton({
           >
             {Icon && <Icon />}
             <span>{item.title}</span>
-            {withChevron && <ChevronRightIcon className="ml-auto size-4" />}
+            {withChevron && <ChevronRightIcon className="ml-auto size-4 rotate-90" />}
           </SidebarMenuButton>
         </span>
       </TooltipTrigger>
@@ -143,7 +143,7 @@ function SubItem({ item }: { item: NavItem }) {
               <button type="button" className="w-full cursor-pointer text-left">
                 {Icon && <Icon />}
                 <span className="flex-1">{item.title}</span>
-                <ChevronRightIcon className="ml-auto size-3.5 text-sidebar-muted! transition-transform duration-200 group-data-[state=open]/sub-collapsible:rotate-90" />
+                <ChevronRightIcon className="ml-auto size-3.5 text-sidebar-muted! rotate-90 transition-transform duration-200 [[data-state=open]>&]:-rotate-90" />
               </button>
             </SidebarMenuSubButton>
           </CollapsibleTrigger>
@@ -239,7 +239,7 @@ function CollapsibleNavItem({
             >
               {Icon && <Icon />}
               <span>{item.title}</span>
-              <ChevronRightIcon className="ml-auto size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+              <ChevronRightIcon className="ml-auto size-4 rotate-90 transition-transform duration-200 [[data-state=open]>&]:-rotate-90" />
             </SidebarMenuButton>
           </CollapsibleTrigger>
         )}

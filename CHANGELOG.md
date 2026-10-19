@@ -2,6 +2,10 @@
 
 Registro simples de ajustes feitos no protótipo (`_proto/frontend`), com data e hora, para acompanhamento das issues.
 
+## 2026-10-19 16:21
+
+- **Setas do menu lateral**: grupo fechado mostra a seta para baixo e grupo aberto, para cima (antes era para a direita fechado e para baixo aberto). A rotação passou a seguir o estado do próprio botão (`[[data-state=open]>&]:-rotate-90`), porque com o `group-data` um subgrupo fechado dentro de um grupo aberto (ex.: Emitidas dentro de Materiais NF-e) herdava o estado do pai. Ajuste em `design-system/components/sidebar/nav-main.tsx` e, como o DS local não tem `node_modules` para o rollup, aplicado também em `design-system/dist/esm` e `dist/cjs`.
+
 ## 2026-10-16 11:30
 
 - **Sidebar do design system**: a casca do app usa o `AppSidebar` da branch `feat/sidebar-v2` do DS (PR #27, ainda em draft), copiado para `design-system/` e com o `dist` rebuildado. Sidebar escura, grupos Documentos fiscais / Regras e conformidade / Administração, colapsável (Ctrl+B), usuário e "Sair" no rodapé (saíram do header). Extensões locais no `NavMain`/`AppSidebar` (onClick, aninhamento livre, badge colapsado) — levar para o PR #27 se aprovadas.
